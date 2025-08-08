@@ -1,6 +1,5 @@
 """Tests for semantic classifier."""
 
-
 import pytest
 
 from langmem_prollytree.taxonomy import ClassificationResult, OptimizedClassifier

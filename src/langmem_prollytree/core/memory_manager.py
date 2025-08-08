@@ -12,16 +12,13 @@ from typing import Any, Optional, Union
 from langmem.knowledge.extraction import MemoryStoreManager
 from pydantic import BaseModel, Field
 
-try:
-    from .prolly_adapter import ProllyTreeStore
-except ImportError:
-    # Fall back to mock for testing
-    from .mock_store import MockProllyTreeStore as ProllyTreeStore
 from langmem_prollytree.search.hierarchical_search import (
     HierarchicalSearchEngine,
     SearchStrategy,
 )
 from langmem_prollytree.taxonomy.semantic_classifier import OptimizedClassifier
+
+from .prolly_adapter import ProllyTreeStore
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +53,7 @@ class ProllyTreeMemoryStoreManager(MemoryStoreManager):
     def __init__(
         self,
         prolly_path: str,
+        model: Union[str, Any] = "gpt-3.5-turbo",  # Default model
         enable_versioning: bool = True,
         enable_fast_classification: bool = True,
         cache_size: int = 10000,
@@ -104,7 +102,7 @@ class ProllyTreeMemoryStoreManager(MemoryStoreManager):
         }
 
         # Initialize parent class with ProllyTree store
-        super().__init__(store=self.prolly_store, **kwargs)
+        super().__init__(model, store=self.prolly_store, **kwargs)
 
     async def search_memories(
         self,

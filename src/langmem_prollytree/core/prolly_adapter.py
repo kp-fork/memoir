@@ -3,15 +3,14 @@ ProllyTree adapter implementing LangGraph's BaseStore interface.
 Provides high-performance semantic memory storage with versioning.
 """
 
-import builtins
 import json
 import logging
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-from langgraph.checkpoint.base import BaseStore
-from prollytree import ProllyTree, VersionedStore
+from langgraph.store.base import BaseStore
+from prollytree import ProllyTree, VersionedKvStore
 from pydantic import BaseModel, Field
 
 from langmem_prollytree.taxonomy.semantic_classifier import OptimizedClassifier
@@ -39,7 +38,7 @@ class MemoryItem(BaseModel):
 class ProllyTreeStore(BaseStore):
     """
     High-performance semantic memory store using ProllyTree.
-    Implements LangGraph's BaseStore interface with enhanced capabilities.
+    Implements LangGraph's BaseStore interface following the reference pattern.
     """
 
     def __init__(
@@ -58,12 +57,44 @@ class ProllyTreeStore(BaseStore):
             enable_versioning: Whether to enable git-like versioning
             cache_size: Size of internal caches
         """
+        super().__init__()
+
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
 
+        # Initialize git repository if using versioning and not exists
+        if enable_versioning:
+            import os
+            import subprocess
+
+            if not os.path.exists(os.path.join(self.path, ".git")):
+                subprocess.run(["git", "init", "--quiet"], cwd=self.path, check=True)
+                subprocess.run(
+                    ["git", "config", "user.name", "LangMem ProllyTree"],
+                    cwd=self.path,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "langmem@example.com"],
+                    cwd=self.path,
+                    check=True,
+                )
+
+                # Create initial commit
+                readme_path = os.path.join(self.path, "README.md")
+                with open(readme_path, "w") as f:
+                    f.write("# LangMem ProllyTree Store\n")
+                subprocess.run(["git", "add", "."], cwd=self.path, check=True)
+                subprocess.run(
+                    ["git", "commit", "-m", "Initial commit"], cwd=self.path, check=True
+                )
+
         # Initialize ProllyTree
         if enable_versioning:
-            self.tree = VersionedStore(str(self.path))
+            # Create data subdirectory for VersionedKvStore
+            data_dir = self.path / "data"
+            data_dir.mkdir(exist_ok=True)
+            self.tree = VersionedKvStore(str(data_dir))
         else:
             self.tree = ProllyTree(str(self.path))
 
@@ -74,312 +105,204 @@ class ProllyTreeStore(BaseStore):
         # Performance tracking
         self._stats = {"reads": 0, "writes": 0, "searches": 0, "classifications": 0}
 
-    def _make_key(self, namespace: str, semantic_key: str) -> str:
-        """Create a full key from namespace and semantic path."""
-        return f"{namespace}.{semantic_key}"
-
-    def _parse_key(self, full_key: str) -> tuple[str, str]:
-        """Parse namespace and semantic key from full key."""
-        parts = full_key.split(".", 1)
-        if len(parts) == 2:
-            return parts[0], parts[1]
-        return "", full_key
-
-    async def aget(
-        self,
-        namespace: tuple[str, ...],
-        key: str,
-        *,
-        refresh_ttl: Optional[bool] = None,
-    ) -> Optional[Any]:
-        """
-        Get a memory item by key.
-
-        Args:
-            namespace: User/agent namespace tuple
-            key: Semantic taxonomy key or memory ID
-            refresh_ttl: Whether to refresh TTL (not supported)
-
-        Returns:
-            Memory content or None if not found
-        """
-        self._stats["reads"] += 1
-
-        # Convert namespace tuple to string
-        namespace_str = ".".join(namespace)
-
-        # Handle both semantic keys and direct lookups
-        if self.taxonomy.is_valid_path(key):
-            full_key = self._make_key(namespace_str, key)
+    def _encode_value(self, value: Any) -> bytes:
+        """Encode any value to bytes for storage."""
+        if isinstance(value, bytes):
+            return value
+        elif isinstance(value, str):
+            return value.encode("utf-8")
         else:
-            # Assume it's a direct key lookup
-            full_key = key
+            # Use JSON for complex objects
+            json_str = json.dumps(value, default=str)
+            return json_str.encode("utf-8")
 
-        try:
-            # Mock implementation for now since ProllyTree integration needs actual implementation
+    def _decode_value(self, data: bytes) -> Any:
+        """Decode bytes from storage back to original type."""
+        if not data:
             return None
-        except Exception as e:
-            logger.error(f"Error getting key {full_key}: {e}")
-
-        return None
-
-    def get(self, namespace: str, key: str) -> Optional[Any]:
-        """Synchronous version of aget."""
-        import asyncio
-
-        return asyncio.run(self.aget(namespace, key))
-
-    async def aput(self, namespace: str, key: str, value: Any) -> None:
-        """
-        Store a memory item.
-
-        Args:
-            namespace: User/agent namespace
-            key: Semantic taxonomy key or custom key
-            value: Memory content to store
-        """
-        self._stats["writes"] += 1
-
-        # Classify if not a valid taxonomy path
-        if not self.taxonomy.is_valid_path(key):
-            # Try to classify the content
-            classification = await self.classifier.classify_async(str(value))
-            semantic_key = classification.primary_path
-            confidence = classification.confidence
-            self._stats["classifications"] += 1
-        else:
-            semantic_key = key
-            confidence = 1.0
-
-        full_key = self._make_key(namespace, semantic_key)
-
-        # Create memory item
-        item = MemoryItem(
-            key=semantic_key,
-            namespace=namespace,
-            content=value,
-            confidence=confidence,
-            timestamp=time.time(),
-        )
-
-        # Store with versioning if enabled
         try:
-            data = json.dumps(item.model_dump()).encode()
+            # Try to decode as JSON first
+            json_str = data.decode("utf-8")
+            return json.loads(json_str)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # Return as string if not JSON
+            try:
+                return data.decode("utf-8")
+            except UnicodeDecodeError:
+                return data
+
+    # BaseStore interface methods
+    def batch(self, ops: list[tuple]) -> list[Any]:
+        """Batch operations - required by BaseStore."""
+        results = []
+        for op in ops:
+            if len(op) == 2:
+                method, args = op
+                result = getattr(self, method)(*args)
+                results.append(result)
+        return results
+
+    def abatch(self, ops: list[tuple]) -> list[Any]:
+        """Async batch operations - synchronous implementation."""
+        return self.batch(ops)
+
+    def search(
+        self, namespace: tuple, *, filter: Optional[dict] = None, limit: int = 10
+    ) -> list[tuple]:
+        """Search for items in a namespace."""
+        self._stats["searches"] += 1
+        prefix = ":".join(namespace) + ":"
+        results = []
+
+        try:
+            # Use list_keys() to get all keys if available
+            if hasattr(self.tree, "list_keys"):
+                keys = self.tree.list_keys()
+                count = 0
+                for key in keys:
+                    if count >= limit:
+                        break
+
+                    key_str = key.decode("utf-8")
+                    if key_str.startswith(prefix):
+                        value = self.tree.get(key)
+                        decoded_value = self._decode_value(value)
+
+                        # Apply filter if provided
+                        if filter and not all(
+                            decoded_value.get(k) == v
+                            for k, v in filter.items()
+                            if isinstance(decoded_value, dict)
+                        ):
+                            continue
+
+                        # Extract item key from full key
+                        item_key = key_str[len(prefix) :]
+                        results.append((namespace, item_key, decoded_value))
+                        count += 1
+        except Exception as e:
+            logger.error(f"Error searching namespace {namespace}: {e}")
+
+        return results
+
+    def put(self, namespace: tuple, key: str, value: dict) -> None:
+        """Store a value in a namespace."""
+        self._stats["writes"] += 1
+        full_key = ":".join(namespace) + ":" + key
+        key_bytes = full_key.encode("utf-8")
+        value_bytes = self._encode_value(value)
+
+        try:
+            # Check if key exists to decide between insert/update
+            existing = self.tree.get(key_bytes)
+            if existing:
+                self.tree.update(key_bytes, value_bytes)
+            else:
+                self.tree.insert(key_bytes, value_bytes)
 
             if self.enable_versioning:
-                commit_msg = f"Update {semantic_key} for {namespace}"
-                await self.tree.put_async(full_key.encode(), data, message=commit_msg)
-                item.version = self.tree.get_head()
-            else:
-                await self.tree.put_async(full_key.encode(), data)
-
-            logger.debug(f"Stored {full_key} with confidence {confidence}")
+                self.tree.commit(f"Store {key} in {':'.join(namespace)}")
 
         except Exception as e:
             logger.error(f"Error storing {full_key}: {e}")
             raise
 
-    def put(self, namespace: str, key: str, value: Any) -> None:
-        """Synchronous version of aput."""
-        import asyncio
-
-        asyncio.run(self.aput(namespace, key, value))
-
-    async def adelete(self, namespace: str, key: str) -> None:
-        """
-        Delete a memory item.
-
-        Args:
-            namespace: User/agent namespace
-            key: Semantic taxonomy key or memory ID
-        """
-        if self.taxonomy.is_valid_path(key):
-            full_key = self._make_key(namespace, key)
-        else:
-            full_key = key
+    def get(self, namespace: tuple, key: str) -> Optional[dict]:
+        """Retrieve a value from a namespace."""
+        self._stats["reads"] += 1
+        full_key = ":".join(namespace) + ":" + key
+        key_bytes = full_key.encode("utf-8")
 
         try:
+            data = self.tree.get(key_bytes)
+            return self._decode_value(data) if data else None
+        except Exception as e:
+            logger.error(f"Error getting key {full_key}: {e}")
+            return None
+
+    def delete(self, namespace: tuple, key: str) -> None:
+        """Delete a key from a namespace."""
+        full_key = ":".join(namespace) + ":" + key
+        key_bytes = full_key.encode("utf-8")
+
+        try:
+            self.tree.delete(key_bytes)
             if self.enable_versioning:
-                commit_msg = f"Delete {key} from {namespace}"
-                await self.tree.delete_async(full_key.encode(), message=commit_msg)
-            else:
-                await self.tree.delete_async(full_key.encode())
-
-            logger.debug(f"Deleted {full_key}")
-
+                self.tree.commit(f"Delete {key} from {':'.join(namespace)}")
         except Exception as e:
             logger.error(f"Error deleting {full_key}: {e}")
 
-    def delete(self, namespace: str, key: str) -> None:
-        """Synchronous version of adelete."""
-        import asyncio
-
-        asyncio.run(self.adelete(namespace, key))
-
-    async def asearch(self, namespace: str, prefix: str) -> list[tuple[str, Any]]:
+    # Enhanced methods for semantic memory functionality
+    def store_memory(
+        self, namespace: str, content: Any, key: Optional[str] = None
+    ) -> MemoryItem:
         """
-        Search for memories by prefix.
+        Store a memory with automatic semantic classification.
 
         Args:
             namespace: User/agent namespace
-            prefix: Semantic path prefix to search
+            content: Memory content to store
+            key: Optional explicit key (will classify if None)
 
         Returns:
-            List of (key, value) tuples
+            MemoryItem with classification results
         """
-        self._stats["searches"] += 1
+        if key and self.taxonomy.is_valid_path(key):
+            semantic_key = key
+            confidence = 1.0
+        else:
+            # Classify the content
+            classification = self.classifier.fast_classify(str(content))
+            semantic_key = classification.primary_path
+            confidence = classification.confidence
+            self._stats["classifications"] += 1
 
-        results = []
-        search_prefix = self._make_key(namespace, prefix)
+        # Create memory item
+        item = MemoryItem(
+            key=semantic_key,
+            namespace=namespace,
+            content=content,
+            confidence=confidence,
+            timestamp=time.time(),
+        )
 
-        try:
-            # Use ProllyTree's efficient range query
-            items = await self.tree.range_query_async(
-                search_prefix.encode(), (search_prefix + "\xff").encode()
-            )
+        # Store using BaseStore interface
+        self.put((namespace,), semantic_key, item.model_dump())
 
-            for key_bytes, value_bytes in items:
-                key = key_bytes.decode()
-                _, semantic_key = self._parse_key(key)
+        if self.enable_versioning and hasattr(self.tree, "get_head"):
+            item.version = self.tree.get_head()
 
-                item = MemoryItem(**json.loads(value_bytes.decode()))
-                results.append((semantic_key, item.content))
+        return item
 
-        except Exception as e:
-            logger.error(f"Error searching {search_prefix}: {e}")
-
-        return results
-
-    def search(self, namespace: str, prefix: str) -> list[tuple[str, Any]]:
-        """Synchronous version of asearch."""
-        import asyncio
-
-        return asyncio.run(self.asearch(namespace, prefix))
-
-    async def alist(self, namespace: str) -> list[str]:
+    def retrieve_memories(
+        self, namespace: str, query: str, limit: int = 10
+    ) -> list[MemoryItem]:
         """
-        List all keys in a namespace.
+        Retrieve memories using semantic search.
 
         Args:
             namespace: User/agent namespace
+            query: Search query
+            limit: Maximum number of results
 
         Returns:
-            List of semantic keys
+            List of matching memory items
         """
-        keys = []
-        prefix = namespace + "."
+        # Use hierarchical search for better results
+        search_results = self.search((namespace,), limit=limit)
 
-        try:
-            items = await self.tree.range_query_async(
-                prefix.encode(), (prefix + "\xff").encode()
-            )
-
-            for key_bytes, _ in items:
-                key = key_bytes.decode()
-                _, semantic_key = self._parse_key(key)
-                keys.append(semantic_key)
-
-        except Exception as e:
-            logger.error(f"Error listing {namespace}: {e}")
-
-        return keys
-
-    def list(self, namespace: str) -> list[str]:
-        """Synchronous version of alist."""
-        import asyncio
-
-        return asyncio.run(self.alist(namespace))
-
-    # Enhanced methods beyond BaseStore
-
-    async def get_history(
-        self, namespace: str, key: str, limit: int = 10
-    ) -> builtins.list[MemoryItem]:
-        """
-        Get version history for a memory.
-
-        Args:
-            namespace: User/agent namespace
-            key: Semantic taxonomy key
-            limit: Maximum number of versions to return
-
-        Returns:
-            List of memory items with version history
-        """
-        if not self.enable_versioning:
-            # Just return current version
-            current = await self.aget(namespace, key)
-            if current:
-                return [
-                    MemoryItem(
-                        key=key,
-                        namespace=namespace,
-                        content=current,
-                        timestamp=time.time(),
-                    )
-                ]
-            return []
-
-        full_key = self._make_key(namespace, key)
-        history = []
-
-        try:
-            versions = self.tree.get_history(full_key.encode(), limit=limit)
-
-            for version_info in versions:
-                data = version_info.get("data")
-                if data:
-                    item = MemoryItem(**json.loads(data.decode()))
-                    item.version = version_info.get("commit_id")
-                    history.append(item)
-
-        except Exception as e:
-            logger.error(f"Error getting history for {full_key}: {e}")
-
-        return history
-
-    async def time_travel(self, namespace: str, timestamp: float) -> dict[str, Any]:
-        """
-        Get all memories as they were at a specific time.
-
-        Args:
-            namespace: User/agent namespace
-            timestamp: Unix timestamp to travel to
-
-        Returns:
-            Dictionary of memories at that point in time
-        """
-        if not self.enable_versioning:
-            logger.warning("Time travel requires versioning to be enabled")
-            return {}
-
-        memories = {}
-
-        try:
-            # Find the commit closest to the timestamp
-            commit_id = self.tree.find_commit_at_time(timestamp)
-
-            if commit_id:
-                # Checkout that version
-                old_head = self.tree.get_head()
-                self.tree.checkout(commit_id)
-
-                # Get all memories
-                items = await self.alist(namespace)
-                for key in items:
-                    value = await self.aget(namespace, key)
-                    if value:
-                        memories[key] = value
-
-                # Restore head
-                self.tree.checkout(old_head)
-
-        except Exception as e:
-            logger.error(f"Error in time travel: {e}")
+        memories = []
+        for _, _key, data in search_results:
+            if isinstance(data, dict):
+                try:
+                    memory = MemoryItem(**data)
+                    memories.append(memory)
+                except Exception as e:
+                    logger.warning(f"Failed to parse memory item: {e}")
 
         return memories
 
-    async def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get store statistics."""
         stats = {
             "performance": self._stats.copy(),
@@ -387,30 +310,18 @@ class ProllyTreeStore(BaseStore):
             "classifier": self.classifier.get_statistics(),
         }
 
-        if self.enable_versioning:
-            stats["versioning"] = {
-                "current_commit": self.tree.get_head(),
-                "total_commits": self.tree.get_commit_count(),
-            }
+        if self.enable_versioning and hasattr(self.tree, "get_head"):
+            try:
+                stats["versioning"] = {
+                    "current_commit": self.tree.get_head(),
+                }
+                if hasattr(self.tree, "log"):
+                    commits = self.tree.log()
+                    stats["versioning"]["total_commits"] = len(commits)
+            except Exception:
+                pass
 
         return stats
-
-    def batch_put(self, items: builtins.list[tuple[str, str, Any]]) -> None:
-        """
-        Batch insert multiple items.
-
-        Args:
-            items: List of (namespace, key, value) tuples
-        """
-        import asyncio
-
-        async def _batch_put():
-            tasks = []
-            for namespace, key, value in items:
-                tasks.append(self.aput(namespace, key, value))
-            await asyncio.gather(*tasks)
-
-        asyncio.run(_batch_put())
 
     def export_namespace(self, namespace: str, output_path: str) -> None:
         """
@@ -421,11 +332,10 @@ class ProllyTreeStore(BaseStore):
             output_path: Path to save JSON file
         """
         memories = {}
+        search_results = self.search((namespace,), limit=1000)
 
-        for key in self.list(namespace):
-            value = self.get(namespace, key)
-            if value:
-                memories[key] = value
+        for _, key, data in search_results:
+            memories[key] = data
 
         with open(output_path, "w") as f:
             json.dump(
@@ -439,24 +349,3 @@ class ProllyTreeStore(BaseStore):
             )
 
         logger.info(f"Exported {len(memories)} memories to {output_path}")
-
-    def import_namespace(
-        self, input_path: str, namespace: Optional[str] = None
-    ) -> None:
-        """
-        Import memories from JSON file.
-
-        Args:
-            input_path: Path to JSON file
-            namespace: Override namespace (uses file namespace if None)
-        """
-        with open(input_path) as f:
-            data = json.load(f)
-
-        ns = namespace or data["namespace"]
-        memories = data["memories"]
-
-        items = [(ns, key, value) for key, value in memories.items()]
-        self.batch_put(items)
-
-        logger.info(f"Imported {len(memories)} memories to {ns}")
