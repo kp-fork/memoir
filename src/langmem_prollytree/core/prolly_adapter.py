@@ -13,7 +13,7 @@ from langgraph.store.base import BaseStore
 from prollytree import ProllyTree, VersionedKvStore
 from pydantic import BaseModel, Field
 
-from langmem_prollytree.taxonomy.semantic_classifier import OptimizedClassifier
+from langmem_prollytree.taxonomy.semantic_classifier import SemanticClassifier
 from langmem_prollytree.taxonomy.semantic_taxonomy import get_taxonomy
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class ProllyTreeStore(BaseStore):
     def __init__(
         self,
         path: str,
-        classifier: Optional[OptimizedClassifier] = None,
+        classifier: Optional[SemanticClassifier] = None,
         enable_versioning: bool = True,
         cache_size: int = 10000,
     ):
@@ -100,7 +100,11 @@ class ProllyTreeStore(BaseStore):
 
         self.enable_versioning = enable_versioning
         self.taxonomy = get_taxonomy()
-        self.classifier = classifier or OptimizedClassifier(cache_size=cache_size)
+        if classifier is None:
+            raise ValueError(
+                "SemanticClassifier with LLM is required for production use"
+            )
+        self.classifier = classifier
 
         # Performance tracking
         self._stats = {"reads": 0, "writes": 0, "searches": 0, "classifications": 0}
@@ -185,6 +189,10 @@ class ProllyTreeStore(BaseStore):
 
         return results
 
+    async def asearch(self, namespace: tuple, path_prefix: str = "") -> list[tuple]:
+        """Async version of search method."""
+        return self.search(namespace, limit=1000)
+
     def put(self, namespace: tuple, key: str, value: dict) -> None:
         """Store a value in a namespace."""
         self._stats["writes"] += 1
@@ -233,7 +241,7 @@ class ProllyTreeStore(BaseStore):
             logger.error(f"Error deleting {full_key}: {e}")
 
     # Enhanced methods for semantic memory functionality
-    def store_memory(
+    async def store_memory_async(
         self, namespace: str, content: Any, key: Optional[str] = None
     ) -> MemoryItem:
         """
@@ -252,7 +260,7 @@ class ProllyTreeStore(BaseStore):
             confidence = 1.0
         else:
             # Classify the content
-            classification = self.classifier.fast_classify(str(content))
+            classification = await self.classifier.classify_async(str(content))
             semantic_key = classification.primary_path
             confidence = classification.confidence
             self._stats["classifications"] += 1
@@ -273,6 +281,52 @@ class ProllyTreeStore(BaseStore):
             item.version = self.tree.get_head()
 
         return item
+
+    def store_memory(
+        self, namespace: str, content: Any, key: Optional[str] = None
+    ) -> MemoryItem:
+        """Synchronous wrapper for store_memory_async."""
+        import asyncio
+
+        # Check if we're already in an event loop
+        try:
+            asyncio.get_running_loop()
+            # We're in an event loop, use fallback
+            in_event_loop = True
+        except RuntimeError:
+            # No event loop running, we can use asyncio.run
+            in_event_loop = False
+
+        if not in_event_loop:
+            return asyncio.run(self.store_memory_async(namespace, content, key))
+        else:
+            # We're already in an event loop, need to use different approach
+            # For now, provide a fallback classification
+            if key and self.taxonomy.is_valid_path(key):
+                semantic_key = key
+                confidence = 1.0
+            else:
+                # Use a simple fallback classification
+                semantic_key = "context.current.session.topic.main"
+                confidence = 0.5
+                self._stats["classifications"] += 1
+
+            # Create memory item
+            item = MemoryItem(
+                key=semantic_key,
+                namespace=namespace,
+                content=content,
+                confidence=confidence,
+                timestamp=time.time(),
+            )
+
+            # Store using BaseStore interface
+            self.put((namespace,), semantic_key, item.model_dump())
+
+            if self.enable_versioning and hasattr(self.tree, "get_head"):
+                item.version = self.tree.get_head()
+
+            return item
 
     def retrieve_memories(
         self, namespace: str, query: str, limit: int = 10

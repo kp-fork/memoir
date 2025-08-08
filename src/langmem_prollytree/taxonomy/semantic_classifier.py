@@ -8,12 +8,18 @@ import json
 import logging
 from typing import Any, Optional
 
-# from langmem.prompts import Prompt  # Not available in current version
 from pydantic import BaseModel, Field
 
+from .base import AdvancedTaxonomyInterface, TaxonomyInterface
 from .semantic_taxonomy import TaxonomyCategory, get_taxonomy
 
 logger = logging.getLogger(__name__)
+
+# Configuration constants
+MAX_PROMPT_PATHS = 100  # Maximum paths to include in classification prompt
+MAX_EXAMPLE_PATHS_PER_CATEGORY = 5  # Max example paths shown per category
+DEFAULT_CACHE_SIZE = 10000  # Default classification cache size
+FALLBACK_PATH = "context.current.session.topic.main"  # Default fallback path
 
 
 class ClassificationResult(BaseModel):
@@ -34,7 +40,8 @@ class SemanticClassifier:
     def __init__(
         self,
         llm: Optional[Any] = None,
-        cache_size: int = 10000,
+        taxonomy: Optional[TaxonomyInterface] = None,
+        cache_size: int = DEFAULT_CACHE_SIZE,
         use_examples: bool = True,
     ):
         """
@@ -42,56 +49,119 @@ class SemanticClassifier:
 
         Args:
             llm: Language model for classification (optional, will use default)
+            taxonomy: Taxonomy instance implementing TaxonomyInterface
+                     If None, uses default SemanticTaxonomy
             cache_size: Size of the classification cache
             use_examples: Whether to include examples in prompts
         """
-        self.taxonomy = get_taxonomy()
+        self.taxonomy = taxonomy if taxonomy is not None else get_taxonomy()
         self.llm = llm
         self.use_examples = use_examples
         self._cache = {}
         self._setup_classification_prompt()
 
+    def _get_taxonomy_structure_info(self) -> str:
+        """Generate taxonomy structure information for the prompt."""
+        try:
+            # All taxonomies should implement TaxonomyInterface
+            all_paths = self.taxonomy.get_all_paths()
+
+            if not all_paths:
+                return "The taxonomy structure is available but paths could not be enumerated."
+
+            # Group paths by top-level category for better organization
+            categories = {}
+            for path in all_paths[
+                :MAX_PROMPT_PATHS
+            ]:  # Limit to prevent prompt overflow
+                parts = path.split(".")
+                if parts:
+                    category = parts[0]
+                    if category not in categories:
+                        categories[category] = []
+                    categories[category].append(path)
+
+            # Generate structured description
+            structure_lines = ["Available taxonomy categories and example paths:"]
+            for category, paths in sorted(categories.items()):
+                structure_lines.append(f"\n• {category}:")
+                # Show a few example paths from each category
+                example_paths = sorted(paths)[
+                    :MAX_EXAMPLE_PATHS_PER_CATEGORY
+                ]  # Show limited examples
+                for path in example_paths:
+                    structure_lines.append(f"  - {path}")
+                if len(paths) > MAX_EXAMPLE_PATHS_PER_CATEGORY:
+                    structure_lines.append(
+                        f"  - ... and {len(paths) - MAX_EXAMPLE_PATHS_PER_CATEGORY} more {category} paths"
+                    )
+
+            structure_lines.append(f"\nTotal paths available: {len(all_paths)}")
+
+            # Add info about 'other' categories if this is an AdvancedTaxonomy
+            if isinstance(self.taxonomy, AdvancedTaxonomyInterface):
+                structure_lines.append(
+                    "\nThis taxonomy includes 'other' categories at various levels for unclassified content."
+                )
+                structure_lines.append(
+                    "Use 'other' categories when content doesn't fit existing specific paths."
+                )
+
+            return "\n".join(structure_lines)
+
+        except Exception as e:
+            logger.warning(f"Could not generate taxonomy structure info: {e}")
+            return "Taxonomy structure is available. Please classify using the most appropriate path."
+
+    def _is_valid_path(self, path: str) -> bool:
+        """Check if a path is valid in the current taxonomy."""
+        try:
+            # All taxonomies should implement TaxonomyInterface
+            return self.taxonomy.is_valid_path(path)
+        except Exception as e:
+            logger.warning(f"Error validating path {path}: {e}")
+            return False
+
     def _setup_classification_prompt(self):
         """Setup the classification prompt template."""
-        # Simplified version without Prompt class
-        self.classification_template = """You are a semantic memory classifier. Your task is to classify the given memory content into the most appropriate path(s) from a fixed taxonomy.
+        # Dynamic template that works with different taxonomy types
+        self.classification_template = """You are a semantic memory classifier. Your task is to classify the given memory content into the most appropriate path(s) from the provided taxonomy.
 
 MEMORY CONTENT:
 {memory_content}
 
 {context_info}
 
-AVAILABLE TAXONOMY PATHS (showing top-level categories):
-- profile: Personal and professional information
-- preferences: User preferences and settings
-- experience: Past projects, achievements, and memories
-- context: Current session and temporal context
-- knowledge: Domain expertise and facts
-- relationships: People and social connections
-- goals: Short and long-term objectives
-- behavior: Patterns and decision-making
+AVAILABLE TAXONOMY STRUCTURE:
+{taxonomy_structure}
 
 CLASSIFICATION GUIDELINES:
-1. Choose the MOST SPECIFIC path that accurately fits the memory
-2. Consider the memory's primary purpose and use case
-3. Look for explicit indicators (e.g., "I prefer" → preferences, "I work at" → profile.professional)
-4. If multiple paths apply, list alternatives in order of relevance
-5. Prefer paths that would make retrieval most intuitive
+1. Choose the most specific path that accurately fits the memory content
+2. If the content doesn't clearly fit existing paths, use an appropriate 'other' category if available
+3. Consider confidence level:
+   - High confidence (0.8-1.0): Very specific and accurate path match
+   - Medium confidence (0.5-0.7): Reasonable fit but could be broader
+   - Low confidence (0.0-0.4): Content is unclear or doesn't fit well
+4. When unsure, prefer broader/higher-level categories over forcing specific ones
 
 {examples}
 
-IMPORTANT: The taxonomy has ~800 predefined paths. You must choose from these existing paths, not create new ones.
+IMPORTANT:
+- Only use paths that exist in the provided taxonomy
+- Prefer accuracy over specificity
+- Return a valid JSON response with the required fields
+- 'Other' categories help the system learn and expand over time
 
 Return your classification as a JSON object with:
-- primary_path: The best matching taxonomy path (e.g., "profile.professional.current.company.name")
+- primary_path: The best matching taxonomy path (can be an 'other' path)
 - confidence: Confidence score from 0 to 1
 - alternative_paths: List of other relevant paths (max 3)
 - reasoning: Brief explanation of your choice (1-2 sentences)
 
 Think step by step:
-1. What type of information is this? (identity, preference, experience, etc.)
-2. What is the specific aspect? (work, personal, technical, etc.)
-3. What is the most granular categorization?"""
+1. Can this be clearly categorized into existing paths?
+2. If uncertain, what's the closest parent category?
+3. Should this go to a specific path or an 'other' category?"""
 
     def _get_classification_examples(self) -> str:
         """Get few-shot examples for classification."""
@@ -102,27 +172,38 @@ Think step by step:
             {
                 "memory": "User's name is John Smith",
                 "path": "profile.personal.identity.name.first",
-                "reasoning": "Direct personal name information",
+                "confidence": 0.95,
+                "reasoning": "Direct personal name information - high confidence",
             },
             {
                 "memory": "Prefers dark mode in IDEs",
                 "path": "preferences.technology.ui.theme.dark",
-                "reasoning": "UI preference for development environment",
+                "confidence": 0.9,
+                "reasoning": "Clear UI preference for development environment",
             },
             {
                 "memory": "Has 5 years of Python experience",
                 "path": "profile.professional.skills.technical.programming.languages",
+                "confidence": 0.85,
                 "reasoning": "Professional technical skill with experience duration",
             },
             {
-                "memory": "Working on a machine learning project for customer churn prediction",
-                "path": "experience.projects.current.active.name",
-                "reasoning": "Current active project information",
+                "memory": "I collect vintage typewriters",
+                "path": "preferences.personal.other",
+                "confidence": 0.6,
+                "reasoning": "Unusual hobby - best fits in preferences but no specific subcategory",
             },
             {
-                "memory": "Graduated from MIT in 2018",
-                "path": "profile.professional.education.formal.institutions",
-                "reasoning": "Formal education history",
+                "memory": "My pet iguana likes to sunbathe",
+                "path": "profile.other",
+                "confidence": 0.5,
+                "reasoning": "Pet information not in standard taxonomy - using profile.other",
+            },
+            {
+                "memory": "I practice lucid dreaming techniques",
+                "path": "behavior.other",
+                "confidence": 0.55,
+                "reasoning": "Unique practice related to behavior but no exact category",
             },
         ]
 
@@ -130,6 +211,7 @@ Think step by step:
         for ex in examples:
             examples_text += f"\nMemory: {ex['memory']}\n"
             examples_text += f"Classification: {ex['path']}\n"
+            examples_text += f"Confidence: {ex['confidence']}\n"
             examples_text += f"Reasoning: {ex['reasoning']}\n"
 
         return examples_text
@@ -157,9 +239,9 @@ Think step by step:
         self, memory_content: str, context: Optional[dict] = None
     ) -> str:
         """Compute a cache key for the classification."""
-        content_hash = hashlib.md5(memory_content.encode()).hexdigest()
+        content_hash = hashlib.sha256(memory_content.encode()).hexdigest()
         context_str = json.dumps(context, sort_keys=True) if context else ""
-        context_hash = hashlib.md5(context_str.encode()).hexdigest()
+        context_hash = hashlib.sha256(context_str.encode()).hexdigest()
         return f"{content_hash}:{context_hash}"
 
     async def classify_async(
@@ -190,6 +272,7 @@ Think step by step:
         prompt_vars = {
             "memory_content": memory_content,
             "context_info": self._get_context_info(context),
+            "taxonomy_structure": self._get_taxonomy_structure_info(),
             "examples": self._get_classification_examples(),
         }
 
@@ -201,15 +284,35 @@ Think step by step:
                 response = await self.llm.ainvoke(prompt_text)
                 result_dict = json.loads(response.content)
             else:
-                # Use mock classification for testing
-                result_dict = self._mock_classify(memory_content)
+                # No LLM provided - must have one for production use
+                raise ValueError(
+                    "No LLM provided for classification. Cannot classify without language model."
+                )
 
             result = ClassificationResult(**result_dict)
 
-            # Validate paths
-            if not self.taxonomy.is_valid_path(result.primary_path):
-                # Find closest valid path
-                result.primary_path = self._find_closest_valid_path(result.primary_path)
+            # Use advanced taxonomy logic if available
+            if isinstance(self.taxonomy, AdvancedTaxonomyInterface):
+                # Advanced taxonomy (e.g., DynamicTaxonomy) - use smart path selection
+                selected_path, final_confidence = (
+                    self.taxonomy.select_path_with_fallback(
+                        classification_result=result,
+                        memory_content=memory_content,
+                        metadata=context.get("metadata") if context else None,
+                    )
+                )
+
+                # Update result with advanced taxonomy's selection
+                result.primary_path = selected_path
+                result.confidence = final_confidence
+
+            else:
+                # Standard taxonomy - just validate paths
+                if not self._is_valid_path(result.primary_path):
+                    # Find closest valid path
+                    result.primary_path = self._find_closest_valid_path(
+                        result.primary_path
+                    )
 
             # Cache result
             if use_cache:
@@ -235,41 +338,6 @@ Think step by step:
 
         return asyncio.run(self.classify_async(memory_content, context, use_cache))
 
-    def _mock_classify(self, memory_content: str) -> dict:
-        """Mock classification for testing without LLM."""
-        # Simple keyword-based classification
-        content_lower = memory_content.lower()
-
-        if "name" in content_lower or "called" in content_lower:
-            path = "profile.personal.identity.name.first"
-        elif (
-            "work" in content_lower
-            or "job" in content_lower
-            or "company" in content_lower
-        ):
-            path = "profile.professional.current.company.name"
-        elif "prefer" in content_lower or "like" in content_lower:
-            path = "preferences.personal.lifestyle.hobbies.active"
-        elif (
-            "python" in content_lower
-            or "javascript" in content_lower
-            or "code" in content_lower
-        ):
-            path = "profile.professional.skills.technical.programming.languages"
-        elif "project" in content_lower:
-            path = "experience.projects.current.active.name"
-        elif "goal" in content_lower or "want to" in content_lower:
-            path = "goals.categories.personal.growth"
-        else:
-            path = "context.current.session.topic.main"
-
-        return {
-            "primary_path": path,
-            "confidence": 0.85,
-            "alternative_paths": [],
-            "reasoning": "Mock classification based on keyword matching",
-        }
-
     def _find_closest_valid_path(self, invalid_path: str) -> str:
         """Find the closest valid path in the taxonomy."""
         parts = invalid_path.split(".")
@@ -277,16 +345,26 @@ Think step by step:
         # Try progressively shorter paths
         for i in range(len(parts), 0, -1):
             test_path = ".".join(parts[:i])
-            if self.taxonomy.is_valid_path(test_path):
+            if self._is_valid_path(test_path):
                 return test_path
 
-        # Default to context if nothing matches
-        return "context.current.session.topic.main"
+        # Fallback to default path, but validate it exists first
+        if self._is_valid_path(FALLBACK_PATH):
+            return FALLBACK_PATH
+
+        # Ultimate fallback: find any valid path from the first category
+        all_paths = self.taxonomy.get_all_paths()
+        if all_paths:
+            return all_paths[0]
+
+        # Should never reach here if taxonomy is properly initialized
+        raise RuntimeError("No valid paths found in taxonomy")
 
     def _fallback_classification(self, memory_content: str) -> ClassificationResult:
         """Provide a fallback classification when normal classification fails."""
+        fallback_path = self._find_closest_valid_path(FALLBACK_PATH)
         return ClassificationResult(
-            primary_path="context.current.session.topic.main",
+            primary_path=fallback_path,
             confidence=0.5,
             alternative_paths=[],
             reasoning="Fallback classification due to processing error",
@@ -313,149 +391,15 @@ Think step by step:
 
     def get_statistics(self) -> dict:
         """Get classifier statistics."""
+        # Get taxonomy path count using the interface
+        try:
+            path_count = len(self.taxonomy.get_all_paths())
+        except Exception:
+            path_count = 0
+
         return {
             "cache_size": len(self._cache),
-            "taxonomy_paths": len(self.taxonomy.get_all_paths()),
+            "taxonomy_paths": path_count,
+            "taxonomy_type": type(self.taxonomy).__name__,
             "categories": len(list(TaxonomyCategory)),
         }
-
-
-class OptimizedClassifier(SemanticClassifier):
-    """
-    Optimized classifier with pre-computed mappings for common queries.
-    Target: 1-5ms classification without LLM calls.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._build_keyword_index()
-
-    def _build_keyword_index(self):
-        """Build keyword to path mappings for fast classification."""
-        self.keyword_map = {
-            # Identity keywords
-            "my pronouns are": ["profile.personal.identity.gender"],
-            "pronouns": ["profile.personal.identity.gender"],
-            "name": ["profile.personal.identity.name"],
-            "called": ["profile.personal.identity.name"],
-            "age": ["profile.personal.identity.age"],
-            "years old": ["profile.personal.identity.age"],
-            "birthday": ["profile.personal.identity.age"],
-            "location": ["profile.personal.location.current"],
-            "live in": ["profile.personal.location.current"],
-            "from": ["profile.personal.location.current"],
-            # Work keywords (more specific first)
-            "work at": ["profile.professional.current.company"],
-            "i work at": ["profile.professional.current.company"],
-            "manage a team": ["profile.professional.current.team"],
-            "team of": ["profile.professional.current.team"],
-            "company": ["profile.professional.current.company"],
-            "job": ["profile.professional.current.position"],
-            "salary": ["profile.professional.current.compensation"],
-            "team": ["profile.professional.current.team"],
-            "manage": ["profile.professional.current.team"],
-            "manager": ["profile.professional.current.position"],
-            "engineer": ["profile.professional.current.position"],
-            "work": ["profile.professional.current"],
-            # Education keywords
-            "phd in": ["profile.professional.education.formal"],
-            "degree in": ["profile.professional.education.formal"],
-            "graduated from": ["profile.professional.education.formal"],
-            "computer science": ["profile.professional.education.formal"],
-            # Skills keywords
-            "python": ["profile.professional.skills.technical.programming"],
-            "javascript": ["profile.professional.skills.technical.programming"],
-            "programming": ["profile.professional.skills.technical.programming"],
-            "coding": ["profile.professional.skills.technical.programming"],
-            "experience": ["profile.professional.skills.technical"],
-            "years": ["profile.professional.skills.technical"],
-            # Preferences keywords
-            "prefer": ["preferences"],
-            "like": ["preferences.personal"],
-            "favorite": ["preferences.personal"],
-            "dark mode": ["preferences.technology.ui.theme"],
-            "theme": ["preferences.technology.ui.theme"],
-            # Project keywords (more specific first)
-            "working on a": ["experience.projects.current.active"],
-            "machine learning project": ["experience.projects.current.active"],
-            "working on": ["experience.projects.current.active"],
-            "project": ["experience.projects.current.active"],
-            "building": ["experience.projects.current.active"],
-            # Goal keywords
-            "my goal is to": ["goals.categories"],
-            "goal is to": ["goals.categories"],
-            "want to become": ["goals.categories"],
-            "goal": ["goals.categories"],
-            "want to": ["goals.categories"],
-            "plan to": ["goals.timeframes.short_term"],
-            "dream": ["goals.timeframes.long_term"],
-            # Memory keywords
-            "remember": ["experience.memories"],
-            "recall": ["experience.memories"],
-            "forgot": ["experience.memories"],
-            # Relationship keywords
-            "friend": ["relationships.people.close.friends"],
-            "family": ["relationships.people.close.family"],
-            "colleague": ["relationships.people.professional.colleagues"],
-            "spouse": ["relationships.people.close.romantic"],
-        }
-
-    def fast_classify(self, memory_content: str) -> ClassificationResult:
-        """
-        Ultra-fast classification using keyword matching.
-        No LLM calls, targets <5ms latency.
-        """
-        content_lower = memory_content.lower()
-
-        # Find matching keywords - prioritize longer phrases
-        matches = []
-        # Sort by length descending to match longer phrases first
-        sorted_keywords = sorted(
-            self.keyword_map.items(), key=lambda x: len(x[0]), reverse=True
-        )
-
-        for keyword, paths in sorted_keywords:
-            if keyword in content_lower:
-                for path in paths:
-                    matches.append((keyword, path))
-                # Use first (longest) match only
-                break
-
-        if matches:
-            # Use the most specific match
-            primary_path = matches[0][1]
-
-            # Find the most specific valid path from taxonomy
-            all_paths = self.taxonomy.get_all_paths()
-            best_match = primary_path
-            best_length = 0
-
-            for full_path in all_paths:
-                if full_path.startswith(primary_path) and len(full_path) > best_length:
-                    best_match = full_path
-                    best_length = len(full_path)
-
-            # If no longer path found, ensure the primary path itself is valid
-            if not self.taxonomy.is_valid_path(best_match):
-                # Find a valid parent path
-                parts = primary_path.split(".")
-                for i in range(len(parts), 0, -1):
-                    test_path = ".".join(parts[:i])
-                    if self.taxonomy.is_valid_path(test_path):
-                        best_match = test_path
-                        break
-
-            return ClassificationResult(
-                primary_path=best_match,
-                confidence=0.9 if len(matches) > 1 else 0.7,
-                alternative_paths=[m[1] for _, m in matches[1:3]],
-                reasoning=f"Fast classification based on keyword: {matches[0][0]}",
-            )
-
-        # Default classification
-        return ClassificationResult(
-            primary_path="context.current.session.topic.main",
-            confidence=0.5,
-            alternative_paths=[],
-            reasoning="No specific keywords found, using default context path",
-        )

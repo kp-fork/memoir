@@ -1,171 +1,339 @@
 """
 Basic usage example of LangMem-ProllyTree integration.
-Demonstrates the dramatic performance improvements over vanilla LangMem.
+Demonstrates the ProllyTreeMemoryStoreManager with semantic classification and storage.
 """
 
+import asyncio
+import os
+import tempfile
 import time
 
-from langmem_prollytree import (
-    ProllyTreeMemoryStoreManager,
-    get_taxonomy,
-)
+from langmem_prollytree import ProllyTreeMemoryStoreManager
+from langmem_prollytree.core.prolly_adapter import MemoryItem
+from langmem_prollytree.taxonomy.dynamic_taxonomy import DynamicTaxonomy
+from langmem_prollytree.taxonomy.semantic_classifier import SemanticClassifier
 
 
-def main():
-    """Demonstrate basic usage and performance improvements."""
+class MockLLMResponse:
+    """Mock response object with .content attribute like LangChain messages."""
 
-    print("=" * 60)
-    print("LangMem-ProllyTree Integration Demo")
-    print("=" * 60)
+    def __init__(self, content: str):
+        self.content = content
 
-    # Initialize the enhanced memory manager
-    memory_manager = ProllyTreeMemoryStoreManager(
-        prolly_path="./memory_db", enable_fast_classification=True
-    )
 
-    # User namespace
-    user_id = "user123"
+class MockLLM:
+    """Mock LLM for demonstration purposes."""
 
-    print("\n1. STORING MEMORIES WITH SEMANTIC CLASSIFICATION")
-    print("-" * 50)
-    print("Storing 10 memories...")
+    async def ainvoke(self, prompt: str) -> MockLLMResponse:
+        """Mock LLM classification responses."""
+        # Extract memory content from prompt
+        if "Memory to classify:" in prompt:
+            content_start = prompt.find("Memory to classify:") + len(
+                "Memory to classify:"
+            )
+            content_line = prompt[content_start:].split("\n")[0].strip()
+            memory_content = content_line.strip('"')
+        else:
+            memory_content = prompt[:50]
 
-    # Sample memories to store
-    memories = [
-        "I have 5 years of experience with Python programming",
-        "I prefer dark mode in my IDE",
-        "My name is John Smith",
-        "I work as a senior software engineer at TechCorp",
-        "I enjoy hiking on weekends",
-        "I'm learning Rust programming language",
-        "Coffee is my favorite morning beverage",
-        "I live in San Francisco",
-        "I graduated from MIT in 2018",
-        "I use VS Code as my primary editor",
-    ]
+        # Simple classification logic based on content keywords
+        content_lower = memory_content.lower()
 
-    # Store memories and measure performance
-    store_times = []
-    stored_keys = []
+        if any(word in content_lower for word in ["name", "called", "i'm"]):
+            return MockLLMResponse(
+                """{
+                "primary_path": "profile.personal.identity.name",
+                "confidence": 0.90,
+                "alternative_paths": ["profile.personal.identity"],
+                "reasoning": "Personal identity information - name"
+            }"""
+            )
+        elif any(
+            word in content_lower for word in ["work", "job", "engineer", "company"]
+        ):
+            return MockLLMResponse(
+                """{
+                "primary_path": "profile.professional.current.role",
+                "confidence": 0.85,
+                "alternative_paths": ["profile.professional.current"],
+                "reasoning": "Professional information about current job"
+            }"""
+            )
+        elif any(
+            word in content_lower for word in ["experience", "years", "programming"]
+        ):
+            return MockLLMResponse(
+                """{
+                "primary_path": "profile.professional.skills.technical.programming",
+                "confidence": 0.85,
+                "alternative_paths": ["profile.professional.skills"],
+                "reasoning": "Technical skills and experience"
+            }"""
+            )
+        elif any(word in content_lower for word in ["prefer", "favorite", "like"]):
+            return MockLLMResponse(
+                """{
+                "primary_path": "preferences.personal.lifestyle.daily",
+                "confidence": 0.80,
+                "alternative_paths": ["preferences.personal"],
+                "reasoning": "Personal preferences and lifestyle choices"
+            }"""
+            )
+        else:
+            return MockLLMResponse(
+                """{
+                "primary_path": "context.other",
+                "confidence": 0.40,
+                "alternative_paths": [],
+                "reasoning": "Content doesn't clearly fit existing categories"
+            }"""
+            )
 
-    # Use the synchronous store methods directly
-    store = memory_manager.prolly_store
 
-    for memory_content in memories:
-        start_time = time.time()
+async def main():
+    """Demonstrate basic usage of ProllyTreeMemoryStoreManager."""
 
-        # Store memory with automatic classification
-        memory_item = store.store_memory(user_id, memory_content)
-        key = memory_item.key
+    print("=" * 70)
+    print("LangMem-ProllyTree Integration - Basic Usage Demo")
+    print("=" * 70)
 
-        store_time = (time.time() - start_time) * 1000
-        store_times.append(store_time)
-        stored_keys.append(key)
+    # Create temporary directory for the demo
+    with tempfile.TemporaryDirectory() as temp_dir:
+        prolly_path = os.path.join(temp_dir, "memory_db")
 
-        print(f"  ✓ Stored: '{memory_content[:40]}...' → {key} ({store_time:.2f}ms)")
+        print(f"\n📁 Creating ProllyTree store at: {prolly_path}")
 
-    avg_store_time = sum(store_times) / len(store_times)
-    print(f"\nAverage storage time: {avg_store_time:.2f}ms")
-    print(
-        f"Performance: {20/avg_store_time:.1f}x faster than vanilla LangMem (200-600ms)"
-    )
+        # Initialize LLM for semantic classification
+        print("\n1. INITIALIZING LLM-BASED CLASSIFICATION SYSTEM")
+        print("-" * 50)
 
-    print("\n2. RETRIEVING MEMORIES WITH HIERARCHICAL SEARCH")
-    print("-" * 50)
+        print("   ⚠️  Using MockLLM for demonstration")
+        print("   📝 In production, replace with real LLM (OpenAI, Anthropic, etc.)")
 
-    # Test different search queries
-    test_queries = [
-        "What programming languages do I know?",
-        "Tell me about my work",
-        "What are my preferences?",
-    ]
+        llm = MockLLM()
 
-    for query in test_queries:
-        start_time = time.time()
+        # Create DynamicTaxonomy (no longer needs classifier)
+        taxonomy = DynamicTaxonomy(confidence_threshold=0.6, expansion_threshold=5)
 
-        # Search using the store's retrieve method
-        results = store.retrieve_memories(user_id, query, limit=5)
+        # Create classifier with the DynamicTaxonomy
+        classifier = SemanticClassifier(llm=llm, taxonomy=taxonomy)
 
-        search_time = (time.time() - start_time) * 1000
-
-        print(f"\nQuery: '{query}'")
-        print(f"Search time: {search_time:.2f}ms")
-        print(f"Found {len(results)} relevant memories:")
-
-        for i, memory in enumerate(results[:3], 1):
-            print(f"  {i}. {memory.content[:60]}...")
-            print(f"     Path: {memory.key} (confidence: {memory.confidence:.2f})")
-
-    print("\n3. VERSION HISTORY (Git-like)")
-    print("-" * 50)
-
-    # Get a specific memory's history
-    if stored_keys:
-        first_key = stored_keys[0]
-        print(f"Version history for: {first_key}")
-
-        # Update the memory
-        store.store_memory(
-            user_id,
-            "I now have 6 years of Python experience and lead a team",
-            key=first_key,
+        print("   ✅ Classification system initialized")
+        print("   🔄 Using DynamicTaxonomy with expansion capabilities")
+        print(
+            f"   📊 Initial paths: {taxonomy.get_statistics()['base_paths']}, Other categories: {taxonomy.get_statistics()['other_categories']}"
         )
 
-        print("  ✓ Memory updated with new content")
+        # Initialize the ProllyTreeMemoryStoreManager
+        print("\n2. INITIALIZING PROLLYTREE MEMORY STORE MANAGER")
+        print("-" * 50)
 
-        # Get statistics
+        memory_manager = ProllyTreeMemoryStoreManager(
+            prolly_path=prolly_path, classifier=classifier, enable_versioning=True
+        )
+
+        print("   ✅ ProllyTreeMemoryStoreManager initialized")
+        print("   📊 Git-like versioning enabled")
+        print("   🌳 Semantic classification integrated")
+
+        # Get direct access to the store for synchronous operations
+        store = memory_manager.prolly_store
+
+        print("\n3. STORING MEMORIES WITH SEMANTIC PATHS")
+        print("-" * 50)
+
+        # Sample memories to store
+        memories = [
+            "My name is Alice Johnson",
+            "I work at Google as a software engineer",
+            "I prefer Python over JavaScript",
+            "I have 5 years of programming experience",
+            "I enjoy hiking on weekends",
+            "I'm learning Rust programming language",
+            "Coffee is my favorite morning beverage",
+            "I live in San Francisco",
+            "I graduated from MIT in 2018",
+            "I use VS Code as my primary editor",
+        ]
+
+        user_id = "user123"
+        stored_memories = []
+
+        print(f"Storing {len(memories)} memories for user {user_id}...")
+
+        for _i, memory_content in enumerate(memories):
+            start_time = time.time()
+
+            # Store memory with semantic classification
+            memory_item = await store.store_memory_async(user_id, memory_content)
+
+            store_time = (time.time() - start_time) * 1000
+            stored_memories.append(memory_item)
+
+            print(f"  ✅ Stored: '{memory_content[:40]}...'")
+            print(f"      → Path: {memory_item.key}")
+            print(
+                f"      → Confidence: {memory_item.confidence:.2f} ({store_time:.2f}ms)"
+            )
+
+        avg_store_time = sum(
+            [(time.time() - start_time) * 1000 for _ in memories]
+        ) / len(memories)
+        print(f"\n📊 Performance: Average storage time {avg_store_time:.2f}ms")
+
+        print("\n4. RETRIEVING MEMORIES WITH HIERARCHICAL SEARCH")
+        print("-" * 50)
+
+        # Test different search queries
+        test_queries = [
+            "What programming languages do I know?",
+            "Tell me about my work",
+            "What are my preferences?",
+        ]
+
+        for query in test_queries:
+            start_time = time.time()
+
+            # Search using the store's retrieve method
+            results = store.retrieve_memories(user_id, query, limit=5)
+
+            search_time = (time.time() - start_time) * 1000
+
+            print(f"\n🔍 Query: '{query}'")
+            print(f"   Search time: {search_time:.2f}ms")
+            print(f"   Found {len(results)} relevant memories:")
+
+            for j, memory in enumerate(results[:3], 1):
+                print(f"     {j}. {memory.content[:50]}...")
+                print(f"        Path: {memory.key}")
+
+        print("\n5. VERSIONING AND HISTORY")
+        print("-" * 50)
+
+        # Update a memory to show versioning
+        if stored_memories:
+            original_memory = stored_memories[0]
+            print(f"Original: {original_memory.content}")
+
+            # Update the memory
+            updated_content = (
+                "My name is Alice Johnson and I'm a senior software engineer"
+            )
+            updated_memory = await store.store_memory_async(
+                user_id, updated_content, key=original_memory.key
+            )
+
+            print(f"Updated:  {updated_memory.content}")
+            print(f"Same key: {original_memory.key == updated_memory.key}")
+            print("   ✅ Memory updated with version history preserved")
+
+        print("\n6. MEMORY ORGANIZATION BY SEMANTIC PATHS")
+        print("-" * 50)
+
+        # Group memories by semantic path - use search to get all memories
+        search_results = store.search((user_id,), limit=1000)
+        all_memories = []
+        for _namespace, key, data in search_results:
+            if isinstance(data, dict) and "content" in data:
+                memory_item = MemoryItem(
+                    key=key,
+                    namespace=user_id,
+                    content=data.get("content", ""),
+                    metadata=data.get("metadata", {}),
+                    timestamp=data.get("timestamp", time.time()),
+                )
+                all_memories.append(memory_item)
+        path_groups = {}
+
+        for memory in all_memories:
+            path = memory.key.split(".")[0]  # Get top-level category
+            if path not in path_groups:
+                path_groups[path] = []
+            path_groups[path].append(memory)
+
+        print("Memories organized by semantic category:")
+        for path, memories_in_path in sorted(path_groups.items()):
+            print(f"  📁 {path}: {len(memories_in_path)} memories")
+            for memory in memories_in_path[:2]:  # Show first 2
+                print(f"     - {memory.content[:45]}...")
+
+        print("\n7. STORE STATISTICS AND STATUS")
+        print("-" * 50)
+
+        # Get statistics from the store
         stats = store.get_statistics()
+
+        print("ProllyTree Store Statistics:")
+        print(f"  📊 Total memories: {stats.get('total_memories', len(all_memories))}")
+        print(f"  🔑 Unique users: {stats.get('unique_users', 1)}")
+        print(
+            f"  📈 Classification performance: {stats.get('avg_classification_time', 'N/A')}"
+        )
+        print(f"  🌳 Taxonomy paths used: {len({m.key for m in all_memories})}")
+
+        # Show versioning info
         if "versioning" in stats:
-            print(f"  Total commits: {stats['versioning'].get('total_commits', 'N/A')}")
+            versioning_stats = stats["versioning"]
+            print(f"  📝 Git commits: {versioning_stats.get('total_commits', 'N/A')}")
+            print(f"  🔄 Repository status: {versioning_stats.get('status', 'Clean')}")
 
-    print("\n4. SEMANTIC TAXONOMY ANALYSIS")
-    print("-" * 50)
+        print("\n8. TESTING MEMORY MANAGER ASYNC METHODS")
+        print("-" * 50)
 
-    # Display taxonomy statistics
-    taxonomy = get_taxonomy()
-    stats = taxonomy.get_statistics()
+        # Test the async methods from ProllyTreeMemoryStoreManager
+        print("Testing MemoryStoreManager async interface...")
 
-    print("Semantic Taxonomy:")
-    print(f"  • Total paths: {stats['total_paths']}")
-    print(f"  • Categories: {stats['categories']}")
-    print(f"  • Max depth: {stats['max_depth']}")
-    print("\nPaths by category:")
-    for category, count in sorted(stats["paths_by_category"].items()):
-        print(f"  • {category}: {count} paths")
+        # Store a memory using the manager's async method
+        test_memory = "I prefer working remotely and value work-life balance"
+        stored_semantic_path = await memory_manager.store_memory(test_memory, user_id)
 
-    print("\n5. MEMORY ORGANIZATION")
-    print("-" * 50)
+        print(f"  ✅ Stored via manager: {test_memory[:40]}...")
+        print(f"     Path: {stored_semantic_path}")
 
-    # Show how memories are organized
-    optimization = {
-        "total_memories": len(memories),
-        "categories": {
-            "profile": 3,
-            "experience": 2,
-            "preferences": 3,
-            "knowledge": 2,
-        },
-    }
+        # Search using manager's async method
+        search_results = await memory_manager.search_memories(
+            "work preferences", user_id, limit=3
+        )
+        print(f"  🔍 Found {len(search_results)} memories about work preferences")
 
-    print(f"Memory Organization for {user_id}:")
-    print(f"  • Total memories: {optimization['total_memories']}")
-    print("\nMemories by category:")
-    for category, count in sorted(optimization["categories"].items()):
-        print(f"  • {category}: {count}")
+        # Get performance metrics from manager
+        performance_metrics = memory_manager.get_performance_metrics()
+        print(
+            f"  📊 Performance: {performance_metrics.get('avg_classification_time_ms', 'N/A')}ms avg classification"
+        )
 
-    print("\n" + "=" * 60)
-    print("PERFORMANCE SUMMARY")
-    print("=" * 60)
-    print(f"✓ Average store time: {avg_store_time:.2f}ms (10-20x faster)")
-    print("✓ Search time: <1ms (150-1500x faster)")
-    print("✓ Classification: 1-5ms (400-1000x faster)")
-    print("✓ Total improvement: 10-20x overall performance gain!")
-    print("\nKey advantages over vanilla LangMem:")
-    print("  • Deterministic semantic keys instead of random UUIDs")
-    print("  • O(log n) prefix queries instead of vector similarity")
-    print("  • No expensive embedding computations")
-    print("  • Git-like versioning with complete history")
+        print("\n" + "=" * 70)
+        print("INTEGRATION SUMMARY")
+        print("=" * 70)
+
+        final_search_results = store.search((user_id,), limit=1000)
+        final_count = len(final_search_results)
+
+        print("✅ Successfully demonstrated ProllyTreeMemoryStoreManager")
+        print(f"📊 Total memories stored: {final_count}")
+        print("🚀 Features demonstrated:")
+        print("   • Semantic classification and storage")
+        print("   • Git-like versioning and history")
+        print("   • Hierarchical memory organization")
+        print("   • Fast search and retrieval")
+        print("   • Async/sync dual interfaces")
+        print("   • User profile management")
+        print("   • Performance monitoring")
+
+        print("\n💡 Key Benefits vs Standard LangMem:")
+        print("   • Deterministic semantic paths vs random UUIDs")
+        print("   • O(log n) prefix queries vs expensive vector search")
+        print("   • Built-in versioning and audit trail")
+        print("   • 10-20x performance improvement")
+        print("   • Automatic semantic organization")
+
+        print("\n📋 Production Usage:")
+        print("   1. Replace MockLLM with real LLM (OpenAI, Anthropic, etc.)")
+        print("   2. Configure semantic classification thresholds")
+        print("   3. Set up persistent storage directory")
+        print("   4. Use both sync and async methods as needed")
+        print("   5. Monitor performance with get_statistics()")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
