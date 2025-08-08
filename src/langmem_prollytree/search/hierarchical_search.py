@@ -11,7 +11,6 @@ import logging
 
 from ..taxonomy.semantic_taxonomy import get_taxonomy
 from ..taxonomy.semantic_classifier import OptimizedClassifier
-from ..core.prolly_adapter import ProllyTreeStore, MemoryItem
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ class HierarchicalSearchEngine:
     """
     
     def __init__(self,
-                 store: ProllyTreeStore,
+                 store: Any,  # Any store with asearch and alist methods
                  classifier: Optional[OptimizedClassifier] = None,
                  min_results: int = 5,
                  max_results: int = 20):

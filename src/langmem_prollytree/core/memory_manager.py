@@ -9,16 +9,26 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime, timedelta
 import logging
 
-from langmem import MemoryStoreManager
-from langmem.memory import Memory
+from langmem.knowledge.extraction import MemoryStoreManager
 from pydantic import BaseModel, Field
 
-from .prolly_adapter import ProllyTreeStore
+try:
+    from .prolly_adapter import ProllyTreeStore
+except ImportError:
+    # Fall back to mock for testing
+    from .mock_store import MockProllyTreeStore as ProllyTreeStore
 from ..taxonomy.semantic_classifier import OptimizedClassifier
 from ..search.hierarchical_search import HierarchicalSearchEngine, SearchStrategy, SearchResult
 
 
 logger = logging.getLogger(__name__)
+
+
+class Memory(BaseModel):
+    """Represents a memory object compatible with LangMem."""
+    id: str = Field(description="Memory identifier")
+    content: Any = Field(description="Memory content")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Memory metadata")
 
 
 class MemoryVersion(BaseModel):

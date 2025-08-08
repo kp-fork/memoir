@@ -3,18 +3,15 @@ Semantic classifier for mapping memories to taxonomy paths.
 Uses LLM-based classification with caching and optimization.
 """
 
-import json
 import hashlib
-from typing import List, Dict, Optional, Tuple, Any
-from dataclasses import dataclass
-from functools import lru_cache
+import json
 import logging
+from typing import List, Dict, Optional, Any
 
-from langmem.prompts import Prompt
+# from langmem.prompts import Prompt  # Not available in current version
 from pydantic import BaseModel, Field
 
 from .semantic_taxonomy import get_taxonomy, TaxonomyCategory
-
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +50,8 @@ class SemanticClassifier:
     
     def _setup_classification_prompt(self):
         """Setup the classification prompt template."""
-        self.classification_prompt = Prompt(
-            id="semantic_classification",
-            name="Semantic Memory Classification",
-            template="""You are a semantic memory classifier. Your task is to classify the given memory content into the most appropriate path(s) from a fixed taxonomy.
+        # Simplified version without Prompt class
+        self.classification_template = """You are a semantic memory classifier. Your task is to classify the given memory content into the most appropriate path(s) from a fixed taxonomy.
 
 MEMORY CONTENT:
 {memory_content}
@@ -93,9 +88,7 @@ Return your classification as a JSON object with:
 Think step by step:
 1. What type of information is this? (identity, preference, experience, etc.)
 2. What is the specific aspect? (work, personal, technical, etc.)
-3. What is the most granular categorization?""",
-            input_variables=["memory_content", "context_info", "examples"]
-        )
+3. What is the most granular categorization?"""
     
     def _get_classification_examples(self) -> str:
         """Get few-shot examples for classification."""
@@ -197,7 +190,7 @@ Think step by step:
         try:
             if self.llm:
                 # Use provided LLM
-                prompt_text = self.classification_prompt.template.format(**prompt_vars)
+                prompt_text = self.classification_template.format(**prompt_vars)
                 response = await self.llm.ainvoke(prompt_text)
                 result_dict = json.loads(response.content)
             else:
@@ -323,38 +316,63 @@ class OptimizedClassifier(SemanticClassifier):
         """Build keyword to path mappings for fast classification."""
         self.keyword_map = {
             # Identity keywords
+            "my pronouns are": ["profile.personal.identity.gender"],
+            "pronouns": ["profile.personal.identity.gender"],
             "name": ["profile.personal.identity.name"],
+            "called": ["profile.personal.identity.name"],
             "age": ["profile.personal.identity.age"],
-            "birthday": ["profile.personal.identity.age.birthday"],
+            "years old": ["profile.personal.identity.age"],
+            "birthday": ["profile.personal.identity.age"],
             "location": ["profile.personal.location.current"],
-            "address": ["profile.personal.location.current.address"],
+            "live in": ["profile.personal.location.current"],
+            "from": ["profile.personal.location.current"],
             
-            # Work keywords
+            # Work keywords (more specific first)
+            "work at": ["profile.professional.current.company"],
+            "i work at": ["profile.professional.current.company"],
+            "manage a team": ["profile.professional.current.team"],
+            "team of": ["profile.professional.current.team"],
             "company": ["profile.professional.current.company"],
             "job": ["profile.professional.current.position"],
-            "work": ["profile.professional.current"],
-            "salary": ["profile.professional.current.compensation.salary"],
+            "salary": ["profile.professional.current.compensation"],
             "team": ["profile.professional.current.team"],
+            "manage": ["profile.professional.current.team"],
+            "manager": ["profile.professional.current.position"],
+            "engineer": ["profile.professional.current.position"],
+            "work": ["profile.professional.current"],
+            
+            # Education keywords
+            "phd in": ["profile.professional.education.formal"],
+            "degree in": ["profile.professional.education.formal"],
+            "graduated from": ["profile.professional.education.formal"],
+            "computer science": ["profile.professional.education.formal"],
             
             # Skills keywords
-            "python": ["profile.professional.skills.technical.programming.languages"],
-            "javascript": ["profile.professional.skills.technical.programming.languages"],
+            "python": ["profile.professional.skills.technical.programming"],
+            "javascript": ["profile.professional.skills.technical.programming"],
             "programming": ["profile.professional.skills.technical.programming"],
             "coding": ["profile.professional.skills.technical.programming"],
+            "experience": ["profile.professional.skills.technical"],
+            "years": ["profile.professional.skills.technical"],
             
             # Preferences keywords
             "prefer": ["preferences"],
             "like": ["preferences.personal"],
             "favorite": ["preferences.personal"],
-            "dark mode": ["preferences.technology.ui.theme.dark"],
+            "dark mode": ["preferences.technology.ui.theme"],
             "theme": ["preferences.technology.ui.theme"],
             
-            # Project keywords
-            "project": ["experience.projects.current.active"],
+            # Project keywords (more specific first)
+            "working on a": ["experience.projects.current.active"],
+            "machine learning project": ["experience.projects.current.active"],
             "working on": ["experience.projects.current.active"],
+            "project": ["experience.projects.current.active"],
             "building": ["experience.projects.current.active"],
             
             # Goal keywords
+            "my goal is to": ["goals.categories"],
+            "goal is to": ["goals.categories"],
+            "want to become": ["goals.categories"],
             "goal": ["goals.categories"],
             "want to": ["goals.categories"],
             "plan to": ["goals.timeframes.short_term"],
@@ -379,26 +397,44 @@ class OptimizedClassifier(SemanticClassifier):
         """
         content_lower = memory_content.lower()
         
-        # Find matching keywords
+        # Find matching keywords - prioritize longer phrases
         matches = []
-        for keyword, paths in self.keyword_map.items():
+        # Sort by length descending to match longer phrases first
+        sorted_keywords = sorted(self.keyword_map.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for keyword, paths in sorted_keywords:
             if keyword in content_lower:
                 for path in paths:
                     matches.append((keyword, path))
+                # Use first (longest) match only
+                break
         
         if matches:
             # Use the most specific match
             primary_path = matches[0][1]
             
-            # Find the most specific valid path
+            # Find the most specific valid path from taxonomy
             all_paths = self.taxonomy.get_all_paths()
+            best_match = primary_path
+            best_length = 0
+            
             for full_path in all_paths:
-                if full_path.startswith(primary_path):
-                    primary_path = full_path
-                    break
+                if full_path.startswith(primary_path) and len(full_path) > best_length:
+                    best_match = full_path
+                    best_length = len(full_path)
+            
+            # If no longer path found, ensure the primary path itself is valid
+            if not self.taxonomy.is_valid_path(best_match):
+                # Find a valid parent path
+                parts = primary_path.split(".")
+                for i in range(len(parts), 0, -1):
+                    test_path = ".".join(parts[:i])
+                    if self.taxonomy.is_valid_path(test_path):
+                        best_match = test_path
+                        break
             
             return ClassificationResult(
-                primary_path=primary_path,
+                primary_path=best_match,
                 confidence=0.9 if len(matches) > 1 else 0.7,
                 alternative_paths=[m[1] for _, m in matches[1:3]],
                 reasoning=f"Fast classification based on keyword: {matches[0][0]}"

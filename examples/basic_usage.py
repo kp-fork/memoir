@@ -22,8 +22,6 @@ async def main():
     
     # Initialize the enhanced memory manager
     memory_manager = ProllyTreeMemoryStoreManager(
-        prolly_path="./memory_db",
-        enable_versioning=True,
         enable_fast_classification=True
     )
     
