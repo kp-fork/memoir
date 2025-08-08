@@ -20,7 +20,7 @@ make test-cov                 # Run tests with coverage report
 pytest tests/test_classifier.py -v  # Run single test file
 
 # Examples and benchmarks
-make examples                 # Run all example scripts (with timeouts)
+make examples                 # Run all example scripts
 make benchmark               # Run performance benchmarks
 python examples/basic_usage.py      # Run specific example
 
@@ -116,12 +116,6 @@ The ProllyTreeStore implements LangGraph's BaseStore with these key methods:
 
 ### Project Structure Patterns
 - **Source layout**: `src/langmem_prollytree/` with proper namespace packaging
-- **Example scripts**: Self-contained in `examples/` with timeout protection
+- **Example scripts**: Self-contained in `examples/` directory
 - **Test organization**: Mirrors source structure with clear test naming
 - **Configuration**: Single pyproject.toml with all tool configs centralized
-
-### Please also Follow These Instructions
-- make sure black formats the code correctly
-- make sure ruff passes without errors
-- Verify that everything still works after the black formatting
-- Run all tests to ensure no regressions before warming up

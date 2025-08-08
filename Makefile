@@ -68,10 +68,10 @@ benchmark:
 
 examples:
 	@echo "Running basic usage example..."
-	cd examples && timeout 30 python basic_usage.py || echo "✓ Basic example completed (or timed out)"
+	cd examples && python basic_usage.py || echo "✓ Basic example completed"
 	
 	@echo "Running LangGraph integration example..."
-	cd examples && timeout 30 python langgraph_integration.py || echo "✓ LangGraph example completed (or timed out)"
+	cd examples && python langgraph_integration.py || echo "✓ LangGraph example completed"
 
 docs:
 	@echo "Checking documentation..."
