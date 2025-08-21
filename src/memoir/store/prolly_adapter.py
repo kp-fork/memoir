@@ -13,9 +13,8 @@ from langgraph.store.base import BaseStore
 from prollytree import ProllyTree, VersionedKvStore
 from pydantic import BaseModel, Field
 
-from memoir.search.hierarchical_search import HierarchicalSearchEngine
-from memoir.taxonomy.semantic_classifier import SemanticClassifier
-from memoir.taxonomy.semantic_taxonomy import get_taxonomy
+# Storage layer doesn't import classification or search modules
+# These are handled by higher layers
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +35,25 @@ class MemoryItem(BaseModel):
     confidence: float = Field(default=1.0, description="Classification confidence")
 
 
+class AggregatedMemory(BaseModel):
+    """Represents aggregated memories at a semantic path."""
+
+    path: str = Field(description="Semantic taxonomy path")
+    memories: list[dict[str, Any]] = Field(
+        default_factory=list, description="List of memory entries at this path"
+    )
+    count: int = Field(default=0, description="Number of memories")
+    first_timestamp: float = Field(
+        default_factory=time.time, description="Timestamp of first memory"
+    )
+    last_timestamp: float = Field(
+        default_factory=time.time, description="Timestamp of last memory"
+    )
+    last_updated: float = Field(
+        default_factory=time.time, description="Last update timestamp"
+    )
+
+
 class ProllyTreeStore(BaseStore):
     """
     High-performance semantic memory store using ProllyTree.
@@ -45,16 +63,17 @@ class ProllyTreeStore(BaseStore):
     def __init__(
         self,
         path: str,
-        classifier: Optional[SemanticClassifier] = None,
         enable_versioning: bool = True,
         cache_size: int = 10000,
     ):
         """
         Initialize ProllyTree store.
 
+        Storage layer is responsible only for storing and retrieving data.
+        Classification is handled by higher layers (memory manager).
+
         Args:
             path: Path to ProllyTree database
-            classifier: Semantic classifier (will create default if None)
             enable_versioning: Whether to enable git-like versioning
             cache_size: Size of internal caches
         """
@@ -69,25 +88,45 @@ class ProllyTreeStore(BaseStore):
             import subprocess
 
             if not os.path.exists(os.path.join(self.path, ".git")):
-                subprocess.run(["git", "init", "--quiet"], cwd=self.path, check=True)
+                subprocess.run(
+                    ["git", "init", "--quiet"],
+                    cwd=self.path,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 subprocess.run(
                     ["git", "config", "user.name", "LangMem ProllyTree"],
                     cwd=self.path,
                     check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
                 subprocess.run(
                     ["git", "config", "user.email", "langmem@example.com"],
                     cwd=self.path,
                     check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
 
                 # Create initial commit
                 readme_path = os.path.join(self.path, "README.md")
                 with open(readme_path, "w") as f:
                     f.write("# LangMem ProllyTree Store\n")
-                subprocess.run(["git", "add", "."], cwd=self.path, check=True)
                 subprocess.run(
-                    ["git", "commit", "-m", "Initial commit"], cwd=self.path, check=True
+                    ["git", "add", "."],
+                    cwd=self.path,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "Initial commit"],
+                    cwd=self.path,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
 
         # Initialize ProllyTree
@@ -101,23 +140,17 @@ class ProllyTreeStore(BaseStore):
             self.tree = ProllyTree("memory")
 
         self.enable_versioning = enable_versioning
-        self.taxonomy = get_taxonomy()
-        if classifier is None:
-            raise ValueError(
-                "SemanticClassifier with LLM is required for production use"
-            )
-        self.classifier = classifier
-
-        # Initialize search engine
-        self.search_engine = HierarchicalSearchEngine(
-            store=self, classifier=classifier, max_content_length=10000
-        )
+        # Storage layer doesn't need taxonomy, classifier, or search engine
+        # These are handled by higher layers
 
         # Performance tracking
         self._stats = {"reads": 0, "writes": 0, "searches": 0, "classifications": 0}
 
         # Key registry for memory mode (since ProllyTree doesn't have list_keys in memory mode)
         self._keys = set()
+
+        # Track aggregated memories to avoid redundant updates
+        self._aggregation_cache = {}
 
     def _encode_value(self, value: Any) -> bytes:
         """Encode any value to bytes for storage."""
@@ -266,138 +299,83 @@ class ProllyTreeStore(BaseStore):
 
     # Enhanced methods for semantic memory functionality
     async def store_memory_async(
-        self, namespace: str, content: Any, key: Optional[str] = None
+        self, namespace: str, content: Any, key: str
     ) -> MemoryItem:
         """
-        Store a memory with automatic semantic classification.
+        Store a memory at the given semantic key.
+
+        Note: Classification must be done by the caller (memory manager).
+        Storage layer is responsible only for storing, not classifying.
 
         Args:
             namespace: User/agent namespace
             content: Memory content to store
-            key: Optional explicit key (will classify if None)
+            key: Semantic key where to store (REQUIRED - no classification here)
 
         Returns:
-            MemoryItem with classification results
+            MemoryItem with storage results
         """
-        # Check if this is a profile update memory - always use the provided key for these
-        is_profile_update = (
-            isinstance(content, dict) and content.get("memory_type") == "profile_update"
-        )
+        # Storage layer: just use the provided semantic key (no classification)
+        semantic_key = key
+        confidence = 1.0  # Confidence is determined by the caller (memory manager)
 
-        # Check if this is a timeline event memory - always use the provided key for these
-        is_timeline_event = (
-            isinstance(content, dict) and content.get("memory_type") == "timeline_event"
-        )
+        # Use semantic key for aggregation
+        storage_key = semantic_key
 
-        # Check if this is a location event memory - always use the provided key for these
-        is_location_event = (
-            isinstance(content, dict) and content.get("memory_type") == "location_event"
-        )
+        # Create memory entry (not the full item)
+        memory_entry = {
+            "content": content,
+            "confidence": confidence,
+            "timestamp": time.time(),
+            "metadata": {},
+        }
 
-        if key and (
-            self.taxonomy.is_valid_path(key)
-            or is_profile_update
-            or is_timeline_event
-            or is_location_event
-        ):
-            semantic_key = key
-            confidence = 1.0
-        elif key and (
-            key.startswith("profile.")
-            or key.startswith("timeline.")
-            or key.startswith("location.")
-        ):
-            # For profile/timeline/location paths, use the provided key even if not in taxonomy
-            # This allows profile updates and timeline events to be stored under their intended paths
-            semantic_key = key
-            confidence = 1.0
-        else:
-            # Classify the content
-            classification = await self.classifier.classify_async(str(content))
-            semantic_key = classification.path
-            confidence = classification.confidence
-            self._stats["classifications"] += 1
-
-        # Create unique storage key while preserving semantic path
-        import uuid
-
-        unique_id = str(uuid.uuid4())[:8]  # Short unique ID
-        storage_key = f"{semantic_key}#{unique_id}"
-
-        # Create memory item
-        item = MemoryItem(
-            key=semantic_key,  # Keep semantic key for classification
-            namespace=namespace,
-            content=content,
-            confidence=confidence,
-            timestamp=time.time(),
-        )
-
-        # Store using BaseStore interface with unique key
-        # Convert string namespace to tuple format for consistency with search
+        # Convert namespace to tuple format
         if ":" in namespace:
             namespace_parts = namespace.split(":")
             namespace_tuple = tuple(namespace_parts)
         else:
             namespace_tuple = (namespace,)
-        self.put(namespace_tuple, storage_key, item.model_dump())
+
+        # Get existing aggregated memory or create new one
+        existing = self.get(namespace_tuple, storage_key)
+
+        if existing and isinstance(existing, dict) and "memories" in existing:
+            # Append to existing aggregated memory
+            aggregated = AggregatedMemory(**existing)
+            aggregated.memories.append(memory_entry)
+            aggregated.count += 1
+            aggregated.last_timestamp = memory_entry["timestamp"]
+            aggregated.last_updated = time.time()
+        else:
+            # Create new aggregated memory
+            aggregated = AggregatedMemory(
+                path=semantic_key,
+                memories=[memory_entry],
+                count=1,
+                first_timestamp=memory_entry["timestamp"],
+                last_timestamp=memory_entry["timestamp"],
+            )
+
+        # Store the aggregated memory
+        self.put(namespace_tuple, storage_key, aggregated.model_dump())
+
+        # Create MemoryItem for return value (for compatibility)
+        item = MemoryItem(
+            key=semantic_key,
+            namespace=namespace,
+            content=content,
+            confidence=confidence,
+            timestamp=memory_entry["timestamp"],
+        )
 
         if self.enable_versioning and hasattr(self.tree, "get_head"):
             item.version = self.tree.get_head()
 
         return item
 
-    def store_memory(
-        self, namespace: str, content: Any, key: Optional[str] = None
-    ) -> MemoryItem:
-        """Synchronous wrapper for store_memory_async."""
-        import asyncio
-
-        # Check if we're already in an event loop
-        try:
-            asyncio.get_running_loop()
-            # We're in an event loop, use fallback
-            in_event_loop = True
-        except RuntimeError:
-            # No event loop running, we can use asyncio.run
-            in_event_loop = False
-
-        if not in_event_loop:
-            return asyncio.run(self.store_memory_async(namespace, content, key))
-        else:
-            # We're already in an event loop, need to use different approach
-            # For now, provide a fallback classification
-            if key and self.taxonomy.is_valid_path(key):
-                semantic_key = key
-                confidence = 1.0
-            else:
-                # Use a simple fallback classification
-                semantic_key = "context.current.session.topic.main"
-                confidence = 0.5
-                self._stats["classifications"] += 1
-
-            # Create unique storage key while preserving semantic path
-            import uuid
-
-            unique_id = str(uuid.uuid4())[:8]  # Short unique ID
-            storage_key = f"{semantic_key}#{unique_id}"
-
-            # Create memory item
-            item = MemoryItem(
-                key=semantic_key,  # Keep semantic key for classification
-                namespace=namespace,
-                content=content,
-                confidence=confidence,
-                timestamp=time.time(),
-            )
-
-            # Store using BaseStore interface with unique key
-            self.put((namespace,), storage_key, item.model_dump())
-
-            if self.enable_versioning and hasattr(self.tree, "get_head"):
-                item.version = self.tree.get_head()
-
-            return item
+    # Sync store_memory method removed - use store_memory_async for all operations
+    # This eliminates the async/sync mismatch and fallback issues
 
     async def asearch(self, namespace: str, path_prefix: str) -> list[tuple[str, Any]]:
         """
@@ -413,7 +391,6 @@ class ProllyTreeStore(BaseStore):
         """
         # Use synchronous search with prefix
         results = []
-        seen_content = set()  # Avoid duplicates based on content
         # Convert string namespace to tuple format
         # "memory:general" -> ("memory", "general")
         namespace_parts = namespace.split(":")
@@ -422,31 +399,17 @@ class ProllyTreeStore(BaseStore):
         search_results = self.search(namespace_tuple, limit=100)
 
         for _, storage_key, data in search_results:
-            # Extract semantic path from storage key (format: semantic_path#unique_id)
-            if "#" in storage_key:
-                semantic_key = storage_key.split("#")[0]
-            else:
-                semantic_key = storage_key
+            semantic_key = storage_key
 
             # Check if semantic path matches prefix
             if semantic_key.startswith(path_prefix):
-                # Avoid duplicates by content
-                content = (
-                    data.get("content", "") if isinstance(data, dict) else str(data)
-                )
-                # Convert unhashable types to hashable format
-                if isinstance(content, dict):
-                    import json
-
-                    content_for_hash = json.dumps(content, sort_keys=True)
-                elif isinstance(content, (list, tuple)):
-                    content_for_hash = str(content)
+                # For aggregated memories, we return them as-is
+                # The search engine will handle expanding them
+                if isinstance(data, dict) and "memories" in data:
+                    # This is an aggregated memory - return it
+                    results.append((semantic_key, data))
                 else:
-                    content_for_hash = content
-                content_hash = hash(content_for_hash)
-                if content_hash not in seen_content:
-                    seen_content.add(content_hash)
-                    # Return semantic key (not storage key) for search engine
+                    # Legacy single memory format
                     results.append((semantic_key, data))
 
         return results

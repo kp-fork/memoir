@@ -1,5 +1,5 @@
 """
-Profile Manager for User Profile Generation and Management.
+Profile Memento for User Profile Generation and Management.
 
 Handles profile serialization, summary generation, and profile updates.
 """
@@ -10,11 +10,11 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-class ProfileManager:
+class ProfileMemento:
     """Manages user profile data and generates profile summaries."""
 
     def __init__(self, memory_store):
-        """Initialize profile manager with memory store."""
+        """Initialize profile memento with memory store."""
         self.memory_store = memory_store
 
     async def apply_profile_updates(
@@ -55,9 +55,10 @@ class ProfileManager:
                 "memory_type": "profile_update",
             }
 
-            # Store directly using the prolly store with correct signature
-            # prolly_store.store_memory(namespace, content, key)
-            self.memory_store.store_memory("memory:general", memory_data, path)
+            # Store directly using the async method (consistent with timeline manager)
+            await self.memory_store.store_memory_async(
+                "memory:general", memory_data, path
+            )
             logger.info(f"Applied profile update: {path} = {value}")
 
     async def get_profile_summary(self, llm=None) -> str:
