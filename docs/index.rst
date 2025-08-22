@@ -22,6 +22,7 @@ Welcome to Memoir's Documentation
    classification
    search
    versioning
+   faq
 
 .. toctree::
    :maxdepth: 2
@@ -36,11 +37,16 @@ Welcome to Memoir's Documentation
 
 .. toctree::
    :maxdepth: 2
-   :caption: Examples
+   :caption: Examples & Demos
 
+   examples
    examples/basic_usage
    examples/intelligent_taxonomy
    examples/locomo_evaluation
+   examples/context_branching
+   examples/memory_debugging
+   examples/reproducible_testing
+   examples/production_debugging
 
 .. toctree::
    :maxdepth: 1

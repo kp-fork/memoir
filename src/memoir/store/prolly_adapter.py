@@ -3,6 +3,7 @@ ProllyTree adapter implementing LangGraph's BaseStore interface.
 Provides high-performance semantic memory storage with versioning.
 """
 
+import contextlib
 import json
 import logging
 import time
@@ -64,6 +65,7 @@ class ProllyTreeStore(BaseStore):
         self,
         path: str,
         enable_versioning: bool = True,
+        auto_commit: bool = True,
         cache_size: int = 10000,
     ):
         """
@@ -75,6 +77,7 @@ class ProllyTreeStore(BaseStore):
         Args:
             path: Path to ProllyTree database
             enable_versioning: Whether to enable git-like versioning
+            auto_commit: Whether to automatically commit on each put/delete operation
             cache_size: Size of internal caches
         """
         super().__init__()
@@ -140,6 +143,7 @@ class ProllyTreeStore(BaseStore):
             self.tree = ProllyTree("memory")
 
         self.enable_versioning = enable_versioning
+        self.auto_commit = auto_commit
         # Storage layer doesn't need taxonomy, classifier, or search engine
         # These are handled by higher layers
 
@@ -248,8 +252,9 @@ class ProllyTreeStore(BaseStore):
                     self.tree.update(key_bytes, value_bytes)
                 else:
                     self.tree.insert(key_bytes, value_bytes)
-                # Commit the change
-                self.tree.commit(f"Store {key} in {':'.join(namespace)}")
+                # Commit the change if auto_commit is enabled
+                if self.auto_commit:
+                    self.tree.commit(f"Store {key} in {':'.join(namespace)}")
             else:
                 # ProllyTree API - check if key exists using find
                 existing = self.tree.find(key_bytes)
@@ -292,10 +297,176 @@ class ProllyTreeStore(BaseStore):
             self.tree.delete(key_bytes)
             # Remove from key registry
             self._keys.discard(full_key)
-            if self.enable_versioning:
+            if self.enable_versioning and self.auto_commit:
                 self.tree.commit(f"Delete {key} from {':'.join(namespace)}")
         except Exception as e:
             logger.error(f"Error deleting {full_key}: {e}")
+
+    def commit(self, message: str = "Manual commit") -> Optional[str]:
+        """
+        Manually commit pending changes to the versioned store.
+
+        This is useful when auto_commit is disabled and you want to batch
+        multiple operations before committing.
+
+        Args:
+            message: Commit message
+
+        Returns:
+            Commit hash if versioning is enabled, None otherwise
+        """
+        if not self.enable_versioning:
+            logger.warning("Commit requested but versioning is not enabled")
+            return None
+
+        try:
+            commit_hash = self.tree.commit(message)
+            logger.debug(f"Manual commit successful: {message}")
+            return commit_hash
+        except Exception as e:
+            logger.error(f"Error committing changes: {e}")
+            raise
+
+    def get_key_history(
+        self, namespace: tuple, key: str, limit: int = 10
+    ) -> list[dict]:
+        """
+        Get commit history for a specific key.
+
+        Args:
+            namespace: Namespace tuple
+            key: Key to get history for
+            limit: Maximum number of commits to return
+
+        Returns:
+            List of commit dictionaries with id, timestamp, message, author, committer
+        """
+        if not self.enable_versioning:
+            return []
+
+        full_key = ":".join(namespace) + ":" + key
+        key_bytes = full_key.encode("utf-8")
+
+        try:
+            commits = self.tree.get_commits_for_key(key_bytes)
+            # Limit results and return most recent first
+            return commits[:limit]
+        except Exception as e:
+            logger.error(f"Error getting history for {full_key}: {e}")
+            return []
+
+    def get_key_at_commit(
+        self, namespace: tuple, key: str, commit_id: str
+    ) -> Optional[dict]:
+        """
+        Get the value of a key at a specific commit.
+
+        Note: Current implementation returns None since VersionedKvStore doesn't support
+        direct commit checkout. This is a placeholder for future enhancement.
+
+        Args:
+            namespace: Namespace tuple
+            key: Key to retrieve
+            commit_id: Commit ID to retrieve from
+
+        Returns:
+            None (historical content retrieval not yet implemented)
+        """
+        if not self.enable_versioning:
+            return None
+
+        # TODO: Implement historical content retrieval when VersionedKvStore supports it
+        # Current limitation: VersionedKvStore only supports branch checkout, not commit checkout
+        logger.debug(
+            f"Historical content retrieval not yet implemented for commit {commit_id[:8]}"
+        )
+        return None
+
+    def create_time_snapshot(self, snapshot_name: str) -> bool:
+        """
+        Create a branch snapshot at the current point in time.
+
+        When auto_commit=False, this will first commit any pending changes
+        before creating the snapshot to ensure all recent changes are included.
+
+        Args:
+            snapshot_name: Name for the snapshot branch
+
+        Returns:
+            True if snapshot created successfully
+        """
+        if not self.enable_versioning:
+            return False
+
+        try:
+            # If auto_commit is disabled, commit pending changes before snapshot
+            if not self.auto_commit:
+                commit_hash = self.commit(
+                    f"Auto-commit before snapshot: {snapshot_name}"
+                )
+                if commit_hash:
+                    logger.debug(
+                        f"Auto-committed pending changes before snapshot: {commit_hash[:8]}"
+                    )
+
+            self.tree.create_branch(snapshot_name)
+            logger.debug(f"Created time snapshot: {snapshot_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create snapshot {snapshot_name}: {e}")
+            return False
+
+    def get_state_at_snapshot(
+        self, namespace: tuple, snapshot_name: str
+    ) -> dict[str, Any]:
+        """
+        Get all keys in a namespace at a specific snapshot.
+
+        Args:
+            namespace: Namespace tuple
+            snapshot_name: Name of the snapshot branch
+
+        Returns:
+            Dictionary of key -> value at that snapshot
+        """
+        if not self.enable_versioning:
+            return {}
+
+        try:
+            # Save current branch
+            current_branch = self.tree.current_branch()
+
+            # Switch to snapshot
+            self.tree.checkout(snapshot_name)
+
+            # Get all keys in namespace
+            state = {}
+            namespace_prefix = ":".join(namespace) + ":"
+
+            keys = self.tree.list_keys()
+            for key in keys:
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                if key_str.startswith(namespace_prefix):
+                    # Get value
+                    value = self.tree.get(
+                        key if isinstance(key, bytes) else key.encode("utf-8")
+                    )
+                    if value:
+                        # Extract the key without namespace prefix
+                        short_key = key_str[len(namespace_prefix) :]
+                        state[short_key] = self._decode_value(value)
+
+            # Return to original branch
+            self.tree.checkout(current_branch)
+
+            return state
+
+        except Exception as e:
+            logger.error(f"Failed to get state at snapshot {snapshot_name}: {e}")
+            # Try to return to original branch
+            with contextlib.suppress(Exception):
+                self.tree.checkout(current_branch)
+            return {}
 
     # Enhanced methods for semantic memory functionality
     async def store_memory_async(
@@ -505,8 +676,8 @@ class ProllyTreeStore(BaseStore):
         """Get store statistics."""
         stats = {
             "performance": self._stats.copy(),
-            "taxonomy": self.taxonomy.get_statistics(),
-            "classifier": self.classifier.get_statistics(),
+            "total_keys": len(self._keys),
+            "total_namespaces": len({key.split(":")[0] for key in self._keys}),
         }
 
         if self.enable_versioning and hasattr(self.tree, "get_head"):
