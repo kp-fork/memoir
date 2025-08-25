@@ -25,10 +25,11 @@ pytest tests/ --tb=short                  # Compact traceback format
 # Examples and benchmarks
 make examples                 # Run all example scripts
 make benchmark               # Run performance benchmarks
-python examples/basic_usage.py            # Run specific example
-python examples/intelligent_taxonomy.py   # Test intelligent taxonomy
+python examples/basic_usage.py            # Basic memory system usage
+python examples/intelligent_taxonomy.py   # Test intelligent classification
 python examples/locomo_evaluation.py      # Evaluate with LOCOMO dataset
-python examples/langgraph_integration.py  # Test LangGraph integration
+python examples/langgraph_with_memoir.py  # LangGraph integration demo
+python examples/langmem_style_with_memoir.py # LangMem-pattern agent example
 
 # Full CI pipeline
 make ci                      # Run complete CI: lint, test, security, examples
@@ -36,6 +37,10 @@ make perf                    # Run benchmarks + show performance summary
 
 # Utility scripts
 python scripts/check_status.py            # Check repository and system status
+
+# UI Visualization Server
+python -m src.memoir.ui.serve_ui          # Start interactive memory visualization UI (port 8080)
+python -m src.memoir.ui.initialize_sample_store  # Create sample memory store for UI testing
 ```
 
 ## Architecture Overview
@@ -83,6 +88,13 @@ This project brings Git-like version control to AI memory systems, replacing opa
 - **BaseIntegration** (`base.py`): Abstract base for framework integrations
 - **MemoryConfig** (`langgraph/types.py`): Configuration management
 - **Utilities** (`langgraph/utils.py`): Helper functions for LangGraph workflows
+
+#### 7. **Interactive UI** (`src/memoir/ui/`)
+- **Web-based Visualization** (`visualization.html`): D3.js memory tree explorer
+- **Python code highlighting**: Syntax-highlighted code examples using highlight.js
+- **Git-like interface**: Branch switching, commit history, time-travel
+- **Command system**: `/connect`, `/code`, `/refresh` and more commands
+- **Real-time updates**: Connect to live memory stores and explore data
 
 ### Key Performance Metrics
 - **Search latency**: 0.1-1ms (vs 150-750ms traditional)
@@ -140,6 +152,7 @@ Before any commit or PR:
 - **Don't bypass the taxonomy**: Always use semantic paths, not raw UUIDs
 - **Don't print debug info**: Use logging or write to `/tmp/` for debugging
 - **Don't commit without testing**: Run at least `make test` before pushing
+- **Don't create test data directories in project**: Use `/tmp/` for test data, never create data directories under the project folder
 
 ## Project-Specific Patterns
 

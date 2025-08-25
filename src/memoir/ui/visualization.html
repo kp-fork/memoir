@@ -1,0 +1,3614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoir Memory Visualizer</title>
+    <link rel="icon" type="image/png" href="static/memoir.png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Syntax highlighting for code -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://unpkg.com/d3@7"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Custom styles for syntax highlighting in modal */
+        .hljs {
+            background: transparent !important;
+            padding: 0 !important;
+        }
+
+        pre code.hljs {
+            display: block;
+            overflow-x: auto;
+            padding: 0;
+        }
+
+        /* Enhance Python syntax colors for dark theme */
+        .hljs-keyword { color: #ff79c6 !important; }
+        .hljs-string { color: #f1fa8c !important; }
+        .hljs-number { color: #bd93f9 !important; }
+        .hljs-comment { color: #6272a4 !important; }
+        .hljs-function { color: #50fa7b !important; }
+        .hljs-class { color: #8be9fd !important; }
+        .hljs-decorator { color: #ff79c6 !important; }
+        .hljs-builtin { color: #8be9fd !important; }
+        .hljs-params { color: #f8f8f2 !important; }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+            color: #f8fafc;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Git Tree Panel */
+        .timeline-panel {
+            width: 380px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(51, 65, 85, 0.3);
+            overflow-y: auto;
+            padding: 24px 20px;
+        }
+
+        .timeline-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+        }
+
+        .memoir-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .memoir-logo-icon {
+            width: 32px;
+            height: 32px;
+            filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.3));
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .memoir-logo:hover .memoir-logo-icon {
+            transform: scale(1.05);
+            filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.5));
+        }
+
+        .memoir-logo:hover .memoir-logo-text {
+            text-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+        }
+
+        .memoir-logo-text {
+            color: #f8fafc;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+        .branch-selector {
+            background: rgba(30, 41, 59, 0.8);
+            color: #f1f5f9;
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            max-width: 200px;
+            width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .branch-selector:hover {
+            background: rgba(51, 65, 85, 0.8);
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .branch-selector option {
+            background: rgba(30, 41, 59, 0.95);
+            color: #f1f5f9;
+            padding: 8px 12px;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Git Tree Structure */
+        .git-tree {
+            font-family: 'JetBrains Mono', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            position: relative;
+        }
+
+        /* Continuous Git tree background */
+        .git-tree::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 28px;
+            width: 4px;
+            height: 100%;
+            background: rgba(34, 211, 238, 0.6);
+            border-radius: 2px;
+            z-index: 0;
+        }
+
+
+        .commit-node {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 0px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 0px;
+            position: relative;
+            min-height: 48px;
+        }
+
+        .commit-node:hover .commit-info {
+            background: rgba(30, 41, 59, 0.4);
+            transform: translateX(4px);
+            border-radius: 8px;
+            padding: 12px 16px;
+        }
+
+        .commit-node.active .commit-info {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.08);
+            border-radius: 8px;
+            padding: 12px 16px;
+        }
+
+        .git-lines {
+            width: 60px;
+            height: 48px;
+            flex-shrink: 0;
+            margin-right: 16px;
+            position: relative;
+        }
+
+        .commit-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            position: absolute;
+            top: 15px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 3;
+        }
+
+        .commit-dot.main {
+            left: 26px;
+            background: #22d3ee;
+            box-shadow: 0 0 16px rgba(34, 211, 238, 0.6);
+            border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+
+        .commit-dot.branch {
+            left: 46px;
+            background: #a78bfa;
+            box-shadow: 0 0 16px rgba(167, 139, 250, 0.6);
+            border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+
+        .commit-dot.merge {
+            left: 26px;
+            background: #fb7185;
+            box-shadow: 0 0 16px rgba(251, 113, 133, 0.6);
+            border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+
+        .commit-dot.tag {
+            left: 26px;
+            background: #fbbf24;
+            box-shadow: 0 0 16px rgba(251, 191, 36, 0.6);
+            border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+
+        .commit-node.active .commit-dot {
+            width: 14px;
+            height: 14px;
+            top: 13px;
+        }
+
+        .commit-node.active .commit-dot.main {
+            left: 24px;
+        }
+
+        .commit-node.active .commit-dot.branch {
+            left: 44px;
+        }
+
+        .commit-node.active .commit-dot.merge,
+        .commit-node.active .commit-dot.tag {
+            left: 24px;
+        }
+
+        /* Git tree lines */
+        .git-line {
+            position: absolute;
+            transition: all 0.3s ease;
+            z-index: 1;
+        }
+
+        /* Main trunk line - continuous flow */
+        .git-line.trunk {
+            width: 3px;
+            background: rgba(34, 211, 238, 0.6);
+            left: 28.5px;
+            top: 0px;
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        /* Branch lines - vertical line from branch split to merge */
+        .git-line.branch-vertical {
+            width: 3px;
+            background: rgba(34, 211, 238, 0.6); /* Same cyan as main branch */
+            left: 48.5px;
+            position: absolute;
+            border-radius: 2px;
+        }
+
+        /* Short branch - spans 2 commits (branch + merge) */
+        .git-line.branch-vertical.short {
+            top: 14px;
+            height: 40px;
+        }
+
+        /* Merge vertical - connects down from merge to branch */
+        .git-line.branch-vertical.merge-down {
+            top: 25px;
+            height: 65px; /* Extended to fully connect merge to branch commit below */
+        }
+
+        /* Branch commit vertical - connects branch between split and merge */
+        .git-line.branch-vertical.branch-commit {
+            top: -40px; /* Start above to connect to merge */
+            height: 140px; /* Further extended to fully reach split point below */
+        }
+
+        /* Medium branch - spans 3 commits */
+        .git-line.branch-vertical.medium {
+            top: -80px;
+            height: 120px;
+        }
+
+        /* Long branch - spans 4+ commits */
+        .git-line.branch-vertical.long {
+            top: -120px;
+            height: 160px;
+        }
+
+        /* Curved branch lines - more natural curves */
+        .git-line.branch-curve {
+            width: 22px;
+            height: 22px;
+            border-radius: 0 0 22px 0;
+            border-top: none;
+            border-left: none;
+            left: 28px;
+            top: 14px;
+            background: transparent;
+        }
+
+        /* Specific curve colors for different branch types - all using main branch color */
+        .git-line.branch-curve.feature {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.branch-curve.hotfix {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.branch-curve.release {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.branch-curve.develop {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.merge-curve {
+            width: 22px;
+            height: 22px;
+            border-radius: 0 22px 0 0;
+            border-bottom: none;
+            border-left: none;
+            left: 28px;
+            top: 8px;
+            background: transparent;
+        }
+
+        /* Specific merge curve colors for different branch types - all using main branch color */
+        .git-line.merge-curve.feature {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.merge-curve.hotfix {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.merge-curve.release {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        .git-line.merge-curve.develop {
+            border: 3px solid rgba(34, 211, 238, 0.6); /* Cyan like main branch */
+        }
+
+        /* Tag indicator */
+        .git-tag {
+            position: absolute;
+            right: 0px;
+            top: 8px;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
+            color: #fbbf24;
+            font-size: 9px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .commit-info {
+            flex: 1;
+            min-width: 0;
+            padding: 8px 0px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .commit-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .commit-hash {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #64748b;
+            background: rgba(30, 41, 59, 0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .branch-tag {
+            font-size: 10px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+            color: #c4b5fd;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 500;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .commit-message {
+            font-size: 13px;
+            color: #f1f5f9;
+            margin-bottom: 4px;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .commit-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .commit-author {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .author-avatar {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #22d3ee 0%, #a78bfa 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .commit-time {
+            opacity: 0.8;
+        }
+
+        /* Main Content Area */
+        .main-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(15, 23, 42, 0.3);
+        }
+
+        .toolbar {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .current-commit {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .commit-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #cbd5e1;
+        }
+
+        .commit-badge {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+            color: #c4b5fd;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+
+        .view-toggle {
+            display: flex;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .view-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .view-btn:hover {
+            color: #f1f5f9;
+            background: rgba(51, 65, 85, 0.5);
+        }
+
+        .view-btn.active {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.8) 0%, rgba(139, 92, 246, 0.8) 100%);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        }
+
+        /* Memory Structure Area */
+        .memory-structure {
+            flex: 1;
+            padding: 32px;
+            overflow: auto;
+            /* Chrome-specific fixes */
+            position: relative;
+            z-index: 1;
+            isolation: isolate; /* Create new stacking context */
+        }
+
+        /* Tree View */
+        .tree-view {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            position: relative;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        .tree-node {
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tree-node:hover .node-content {
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 8px;
+        }
+
+        .node-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .node-icon {
+            width: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .node-label {
+            color: #ffffff;
+            padding: 4px 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .node-label.has-memories {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .memory-count {
+            background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(167, 139, 250, 0.2) 100%);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin-left: auto;
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .node-children {
+            margin-left: 32px;
+            border-left: 2px solid rgba(100, 116, 139, 0.2);
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .node-children::before {
+            content: '';
+            position: absolute;
+            left: -2px;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(34, 211, 238, 0.3) 0%, rgba(167, 139, 250, 0.3) 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .tree-node:hover .node-children::before {
+            opacity: 1;
+        }
+
+        /* Graph View */
+        .graph-view {
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at center, rgba(30, 41, 59, 0.3) 0%, rgba(15, 23, 42, 0.8) 100%);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .graph-watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-15deg);
+            font-size: 180px;
+            font-weight: 900;
+            color: rgba(34, 211, 238, 0.05);
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: -0.02em;
+            pointer-events: none;
+            z-index: 1;
+            user-select: none;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 8px;
+            color: #f1f5f9;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .zoom-btn:hover {
+            background: rgba(51, 65, 85, 0.8);
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: scale(1.05);
+        }
+
+        .zoom-reset {
+            font-size: 14px;
+            width: 40px;
+            height: 32px;
+        }
+
+        .graph-node {
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .graph-node:hover {
+            stroke: #22d3ee;
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.5));
+        }
+
+        .graph-link {
+            stroke: rgba(100, 116, 139, 0.4);
+            stroke-width: 2px;
+            transition: all 0.3s ease;
+        }
+
+        .graph-link:hover {
+            stroke: rgba(34, 211, 238, 0.6);
+            stroke-width: 3px;
+        }
+
+        .node-text {
+            fill: #f1f5f9;
+            font-size: 12px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            text-anchor: middle;
+            pointer-events: none;
+        }
+
+        /* Memory Details Panel */
+        .memory-details {
+            position: fixed;
+            right: 24px;
+            top: 100px;
+            width: 380px;
+            background: rgba(15, 23, 42, 0.98);
+            border: 1px solid rgba(51, 65, 85, 0.3);
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+            /* Fix Chrome issues: use transform instead of display, lower z-index */
+            transform: translateX(calc(100% + 24px));
+            opacity: 0;
+            visibility: hidden;
+            z-index: 100;
+            /* Remove backdrop-filter that causes blur */
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+
+        .memory-details.open {
+            transform: translateX(0);
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .details-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+        }
+
+        .details-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fafc;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: -0.025em;
+        }
+
+        .close-btn {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(71, 85, 105, 0.3);
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 14px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .close-btn:hover {
+            background: rgba(51, 65, 85, 0.8);
+            color: #f1f5f9;
+            transform: scale(1.05);
+        }
+
+        .memory-item {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(51, 65, 85, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+        }
+
+        .memory-item:hover {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(99, 102, 241, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .memory-content {
+            font-size: 14px;
+            color: #f1f5f9;
+            margin-bottom: 12px;
+            line-height: 1.6;
+            font-weight: 400;
+        }
+
+        .memory-meta {
+            font-size: 12px;
+            color: #94a3b8;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .confidence-score {
+            background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(167, 139, 250, 0.2) 100%);
+            color: #22d3ee;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 10px;
+            border: 1px solid rgba(34, 211, 238, 0.3);
+        }
+
+        /* Loading States */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 300px;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(51, 65, 85, 0.3);
+            border-top: 3px solid #22d3ee;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Glassmorphism effects */
+        .glass {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Smooth transitions for all interactive elements */
+        * {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.3);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.4);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 0.6);
+        }
+
+        /* Memory Input Bar */
+        .memory-input-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            right: 24px;
+            width: 700px;
+            transform: translateX(-50px);
+            z-index: 1000;
+        }
+
+        .input-container {
+            position: relative;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(51, 65, 85, 0.3);
+            border-radius: 24px;
+            padding: 16px 80px 16px 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-container:focus-within {
+            border-color: rgba(34, 211, 238, 0.5);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(34, 211, 238, 0.2);
+        }
+
+        #memoryInput {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            font-weight: 400;
+            line-height: 1.5;
+            padding: 0;
+        }
+
+        #memoryInput::placeholder {
+            color: rgba(148, 163, 184, 0.7);
+        }
+
+        .input-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .input-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 12px;
+            background: rgba(51, 65, 85, 0.3);
+            color: #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-btn:hover {
+            background: rgba(51, 65, 85, 0.5);
+            color: #f8fafc;
+            transform: translateY(-1px);
+        }
+
+        .query-btn:hover {
+            background: rgba(34, 211, 238, 0.2);
+            color: #22d3ee;
+        }
+
+        .add-btn:hover {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .input-suggestions {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            right: 0;
+            margin-bottom: 8px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(51, 65, 85, 0.3);
+            border-radius: 16px;
+            padding: 12px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+
+        .suggestion-item {
+            padding: 8px 12px;
+            color: #94a3b8;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(51, 65, 85, 0.3);
+            color: #f8fafc;
+        }
+
+        @media (max-width: 768px) {
+            .memory-input-bar {
+                bottom: 16px;
+                left: 16px;
+                right: 16px;
+                transform: none;
+                width: calc(100% - 32px);
+            }
+
+            .input-container {
+                padding: 14px 70px 14px 20px;
+            }
+
+            #memoryInput {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Git Tree Panel -->
+        <div class="timeline-panel">
+            <div class="timeline-header">
+                <div class="memoir-logo">
+                    <img src="static/memoir.png" alt="Memoir" class="memoir-logo-icon" />
+                    <span class="memoir-logo-text">Memoir</span>
+                </div>
+
+                <select class="branch-selector" id="branchSelector">
+                    <option value="main">main</option>
+                    <option value="experiment">experiment</option>
+                    <option value="user-profile">user-profile</option>
+                </select>
+            </div>
+
+            <div class="git-tree" id="gitTree">
+                <!-- Week 1 - Recent commits -->
+                <div class="commit-node active" data-commit="f9a8b12">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.3.1</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">f9a8b12</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">fix: Resolve memory leak in taxonomy caching</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="d75e832">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">d75e832</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add intelligent memory classification</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">4h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="e2c4f89">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve feature"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">e2c4f89</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/batch-processing'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">8h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="b3a7c91">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">b3a7c91</div><div class="branch-tag">feature/batch-processing</div></div>
+                        <div class="commit-message">perf: Implement batch memory operations</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">12h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="c3f7921">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve feature"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">c3f7921</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Optimize search engine performance</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="a9e5d21">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">a9e5d21</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add memory confidence scoring</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="b92f381">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.3.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">b92f381</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Modern glassmorphism UI design</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2d ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Week 2 - Previous week -->
+                <div class="commit-node" data-commit="7f2a8b3">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve feature"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">7f2a8b3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/async-processing'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">3d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="6e1b4c7">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">6e1b4c7</div><div class="branch-tag">feature/async-processing</div></div>
+                        <div class="commit-message">feat: Add async memory operations</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">4d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="a4f7f14">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve feature"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">a4f7f14</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Improve memory store performance</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">4d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="3d9c2e8">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">3d9c2e8</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">docs: Update API documentation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">5d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8e1c492">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.2.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8e1c492</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Git-like versioning for AI memory</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">6d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="5a8f3b1">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">5a8f3b1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">fix: Handle edge cases in memory retrieval</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Week 3-4 - Older commits -->
+                <div class="commit-node" data-commit="2b7e4a9">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve hotfix"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">2b7e4a9</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/search-improvements'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="9c4d1f8">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">9c4d1f8</div><div class="branch-tag">feature/search-improvements</div></div>
+                        <div class="commit-message">feat: Enhanced semantic search capabilities</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="f3e8a72">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve release"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">f3e8a72</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">test: Add comprehensive unit tests</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="35be3ae">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.1.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">35be3ae</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add comprehensive API documentation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="1a5c9d4">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">1a5c9d4</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Clean up legacy code paths</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8b2f6e3">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8b2f6e3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Implement memory compression</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Month 2 - Earlier development -->
+                <div class="commit-node" data-commit="4d7a3c1">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve release"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">4d7a3c1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/taxonomy-system'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="6f8e2b9">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">6f8e2b9</div><div class="branch-tag">feature/taxonomy-system</div></div>
+                        <div class="commit-message">feat: Dynamic taxonomy expansion</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="9e4b7a2">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve develop"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">9e4b7a2</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Core taxonomy implementation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="2c1e5f7">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.0.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">2c1e5f7</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Major architecture overhaul</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="7a3d8c4">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">7a3d8c4</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Modularize classifier system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="5b9f2e1">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">5b9f2e1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add memory indexing system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8c4a6f3">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v1.5.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8c4a6f3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Implement prolly tree storage</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="3f7b1a8">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">3f7b1a8</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">docs: Add getting started guide</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="00c5625">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v1.0.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">00c5625</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Initial release - Core memory system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">2mo ago</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Panel -->
+        <div class="main-panel">
+            <div class="toolbar">
+                <div class="current-commit">
+                    <span class="commit-label">Viewing:</span>
+                    <span class="commit-badge" id="currentCommit">d75e832</span>
+                </div>
+
+
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="tree">🌳 Tree</button>
+                    <button class="view-btn" data-view="graph">🕸️ Graph</button>
+                </div>
+            </div>
+
+            <div class="memory-structure" id="memoryStructure">
+                <!-- Tree View (Default) -->
+                <div class="tree-view" id="treeView">
+                    <div class="tree-node">
+                        <div class="node-content">
+                            <span class="node-icon">📁</span>
+                            <span class="node-label">profile</span>
+                        </div>
+                        <div class="node-children">
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">personal</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">identity</span>
+                                            <span class="memory-count">8</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">location</span>
+                                            <span class="memory-count">6</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">relationships</span>
+                                            <span class="memory-count">5</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">health</span>
+                                            <span class="memory-count">4</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">goals</span>
+                                            <span class="memory-count">3</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">professional</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">skills</span>
+                                            <span class="memory-count">12</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">experience</span>
+                                            <span class="memory-count">9</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">companies</span>
+                                            <span class="memory-count">4</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">education</span>
+                                            <span class="memory-count">3</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">achievements</span>
+                                            <span class="memory-count">6</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">preferences</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">interface</span>
+                                            <span class="memory-count">5</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">notifications</span>
+                                            <span class="memory-count">3</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">privacy</span>
+                                            <span class="memory-count">4</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">workflow</span>
+                                            <span class="memory-count">2</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">interests</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">music</span>
+                                            <span class="memory-count">4</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">books</span>
+                                            <span class="memory-count">7</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">movies</span>
+                                            <span class="memory-count">3</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">sports</span>
+                                            <span class="memory-count">2</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">hobbies</span>
+                                            <span class="memory-count">5</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">technology</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">devices</span>
+                                            <span class="memory-count">3</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">tools</span>
+                                            <span class="memory-count">8</span>
+                                        </div>
+                                    </div>
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label has-memories">platforms</span>
+                                            <span class="memory-count">6</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Graph View (Hidden by default) -->
+                <div class="graph-view" id="graphView" style="display: none; pointer-events: none;">
+                    <div class="graph-watermark">MEMOIR</div>
+                    <div class="zoom-controls">
+                        <button class="zoom-btn" id="zoomIn" title="Zoom In">+</button>
+                        <button class="zoom-btn" id="zoomOut" title="Zoom Out">−</button>
+                        <button class="zoom-btn zoom-reset" id="zoomReset" title="Reset View">⌂</button>
+                    </div>
+                    <svg width="100%" height="100%" id="graphSvg"></svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Details Panel -->
+    <div class="memory-details" id="memoryDetails">
+        <div class="details-header">
+            <h3 class="details-title" id="detailsPath">profile.personal.identity</h3>
+            <button class="close-btn" id="closeDetails">✕</button>
+        </div>
+
+        <div id="memoriesList">
+            <div class="memory-item">
+                <div class="memory-content">Name: John Doe, prefers to be called Johnny</div>
+                <div class="memory-meta">
+                    <span class="confidence-score">0.95</span>
+                    <span>2h ago</span>
+                </div>
+            </div>
+
+            <div class="memory-item">
+                <div class="memory-content">Age: 28, born March 15th, 1995</div>
+                <div class="memory-meta">
+                    <span class="confidence-score">1.0</span>
+                    <span>1d ago</span>
+                </div>
+            </div>
+
+            <div class="memory-item">
+                <div class="memory-content">Pronouns: he/him</div>
+                <div class="memory-meta">
+                    <span class="confidence-score">1.0</span>
+                    <span>3d ago</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Memory Input Bar -->
+    <div class="memory-input-bar">
+        <div class="input-container">
+            <input
+                type="text"
+                id="memoryInput"
+                placeholder="Ask a question, add memory, or use /commands (try /connect /tmp/memoir_ui_store)"
+                autocomplete="off"
+            />
+            <div class="input-actions">
+                <button class="input-btn query-btn" id="queryBtn" title="Search/Query Memory">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M15.5 14h-.79l-.28-.27c.98-1.13 1.57-2.61 1.57-4.23 0-3.59-2.91-6.5-6.5-6.5S3 5.91 3 9.5s2.91 6.5 6.5 6.5c1.62 0 3.1-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                </button>
+                <button class="input-btn add-btn" id="addBtn" title="Add Memory">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="input-suggestions" id="inputSuggestions" style="display: none;">
+            <div class="suggestion-item">Search for "Python skills"</div>
+            <div class="suggestion-item">Add "I prefer dark theme"</div>
+            <div class="suggestion-item">Query "What are my interests?"</div>
+        </div>
+    </div>
+
+    <script>
+        // Store connection state
+        let connectedStorePath = null;
+        let storeData = null;
+
+        // Mock data and interactions with 30 commits
+        const commits = {
+            'f9a8b12': { tree: generateMockTree(1.0) },  // Latest - full data
+            'd75e832': { tree: generateMockTree(0.98) },
+            'e2c4f89': { tree: generateMockTree(0.95) },
+            'b3a7c91': { tree: generateMockTree(0.93) },
+            'c3f7921': { tree: generateMockTree(0.90) },
+            'a9e5d21': { tree: generateMockTree(0.88) },
+            'b92f381': { tree: generateMockTree(0.85) }, // v2.3.0
+            '7f2a8b3': { tree: generateMockTree(0.82) },
+            '6e1b4c7': { tree: generateMockTree(0.80) },
+            'a4f7f14': { tree: generateMockTree(0.78) },
+            '3d9c2e8': { tree: generateMockTree(0.75) },
+            '8e1c492': { tree: generateMockTree(0.72) }, // v2.2.0
+            '5a8f3b1': { tree: generateMockTree(0.70) },
+            '2b7e4a9': { tree: generateMockTree(0.67) },
+            '9c4d1f8': { tree: generateMockTree(0.65) },
+            'f3e8a72': { tree: generateMockTree(0.62) },
+            '35be3ae': { tree: generateMockTree(0.60) }, // v2.1.0
+            '1a5c9d4': { tree: generateMockTree(0.57) },
+            '8b2f6e3': { tree: generateMockTree(0.55) },
+            '4d7a3c1': { tree: generateMockTree(0.52) },
+            '6f8e2b9': { tree: generateMockTree(0.50) },
+            '9e4b7a2': { tree: generateMockTree(0.47) },
+            '2c1e5f7': { tree: generateMockTree(0.45) }, // v2.0.0
+            '7a3d8c4': { tree: generateMockTree(0.42) },
+            '5b9f2e1': { tree: generateMockTree(0.40) },
+            '8c4a6f3': { tree: generateMockTree(0.35) }, // v1.5.0
+            '3f7b1a8': { tree: generateMockTree(0.30) },
+            '00c5625': { tree: generateMockTree(0.20) }  // v1.0.0 - minimal data
+        };
+
+        function generateMockTree(density = 1.0) {
+            // Generate comprehensive tree with 118 total memories at full density
+            return {
+                // Personal (26 memories)
+                'profile.personal.identity': Math.floor(8 * density),
+                'profile.personal.location': Math.floor(6 * density),
+                'profile.personal.relationships': Math.floor(5 * density),
+                'profile.personal.health': Math.floor(4 * density),
+                'profile.personal.goals': Math.floor(3 * density),
+
+                // Professional (34 memories)
+                'profile.professional.skills': Math.floor(12 * density),
+                'profile.professional.experience': Math.floor(9 * density),
+                'profile.professional.companies': Math.floor(4 * density),
+                'profile.professional.education': Math.floor(3 * density),
+                'profile.professional.achievements': Math.floor(6 * density),
+
+                // Preferences (14 memories)
+                'profile.preferences.interface': Math.floor(5 * density),
+                'profile.preferences.notifications': Math.floor(3 * density),
+                'profile.preferences.privacy': Math.floor(4 * density),
+                'profile.preferences.workflow': Math.floor(2 * density),
+
+                // Interests (21 memories)
+                'profile.interests.music': Math.floor(4 * density),
+                'profile.interests.books': Math.floor(7 * density),
+                'profile.interests.movies': Math.floor(3 * density),
+                'profile.interests.sports': Math.floor(2 * density),
+                'profile.interests.hobbies': Math.floor(5 * density),
+
+                // Technology (17 memories)
+                'profile.technology.devices': Math.floor(3 * density),
+                'profile.technology.tools': Math.floor(8 * density),
+                'profile.technology.platforms': Math.floor(6 * density)
+            };
+        }
+
+        // Command handling
+        async function handleCommand(command) {
+            console.log('Handling command:', command);
+            const parts = command.trim().split(' ');
+            const cmd = parts[0].toLowerCase();
+            console.log('Command parts:', parts);
+
+            if (cmd === '/connect') {
+                const path = parts.slice(1).join(' ');
+                if (!path) {
+                    showNotification('Usage: /connect <path-to-memory-store>', 'error');
+                    return;
+                }
+                await connectToStore(path);
+            } else if (cmd === '/refresh') {
+                if (!connectedStorePath) {
+                    showNotification('Not connected. Use /connect <path> first', 'error');
+                    return;
+                }
+                await refreshStore();
+            } else if (cmd === '/demo') {
+                showDemoData();
+            } else if (cmd === '/repo') {
+                showRepoInfo();
+            } else if (cmd === '/code') {
+                showIntegrationCode();
+            } else if (cmd === '/help') {
+                const workingCommands = availableCommands.filter(c => !c.placeholder).map(c => c.cmd + (c.args ? ' ' + c.args : '')).join(', ');
+                const comingSoonCommands = availableCommands.filter(c => c.placeholder).map(c => c.cmd).join(', ');
+                showNotification(`Working commands: ${workingCommands}\n\nComing soon: ${comingSoonCommands}`, 'info', 8000);
+            } else {
+                // Check if it's a placeholder command
+                const placeholderCmd = availableCommands.find(c => c.cmd === cmd && c.placeholder);
+                if (placeholderCmd) {
+                    showNotification(`${placeholderCmd.cmd} - ${placeholderCmd.desc}`, 'info', 4000);
+                } else {
+                    showNotification(`Unknown command: ${cmd}`, 'error');
+                }
+            }
+        }
+
+        function showDemoData() {
+            console.log('Showing original demo data');
+            connectedStorePath = null; // Reset connection to show original state
+            showNotification('Demo mode - showing original page state for exploration', 'info');
+
+            // Clear existing data
+            storeData = null;
+
+            // Restore original static HTML tree view directly
+            restoreOriginalTreeView();
+
+            // Update branches dropdown to original state
+            updateBranchesDropdown(['main', 'feature/context-memory', 'feature/ui-improvements', 'experimental/ml-optimization'], 'main');
+
+            // Update commits to original state
+            updateCommitTimeline([
+                {"hash": "d75e832", "message": "Implement simple server to visualize memory structure and history"},
+                {"hash": "e569282", "message": "Add Memoir UI"},
+                {"hash": "b44a526", "message": "fix html lines"},
+                {"hash": "a4f7f14", "message": "feat: Add LangGraph integration package with comprehensive examples and documentation"},
+                {"hash": "35be3ae", "message": "feat: implement Git-like version control and time travel for AI memory"},
+                {"hash": "2c1e5f7", "message": "Enhanced memory classification system"},
+                {"hash": "8c4a6f3", "message": "Add preference tracking and user context"},
+                {"hash": "00c5625", "message": "Initial memory system implementation"}
+            ]);
+
+            // Update graph view to original state
+            updateGraphView();
+        }
+
+        function restoreOriginalTreeView() {
+            const treeView = document.getElementById('treeView');
+            if (!treeView) return;
+
+            // Restore the original static HTML tree structure
+            treeView.innerHTML = `
+                <div class="tree-node">
+                    <div class="node-content">
+                        <span class="node-icon">📁</span>
+                        <span class="node-label">profile</span>
+                    </div>
+                    <div class="node-children">
+                        <div class="tree-node">
+                            <div class="node-content">
+                                <span class="node-icon">📁</span>
+                                <span class="node-label">personal</span>
+                            </div>
+                            <div class="node-children">
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">identity</span>
+                                        <span class="memory-count">8</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">location</span>
+                                        <span class="memory-count">6</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">relationships</span>
+                                        <span class="memory-count">5</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">health</span>
+                                        <span class="memory-count">4</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">goals</span>
+                                        <span class="memory-count">3</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tree-node">
+                            <div class="node-content">
+                                <span class="node-icon">📁</span>
+                                <span class="node-label">professional</span>
+                            </div>
+                            <div class="node-children">
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">skills</span>
+                                        <span class="memory-count">12</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">experience</span>
+                                        <span class="memory-count">9</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">companies</span>
+                                        <span class="memory-count">4</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">education</span>
+                                        <span class="memory-count">3</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">achievements</span>
+                                        <span class="memory-count">6</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tree-node">
+                            <div class="node-content">
+                                <span class="node-icon">📁</span>
+                                <span class="node-label">preferences</span>
+                            </div>
+                            <div class="node-children">
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">interface</span>
+                                        <span class="memory-count">5</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">notifications</span>
+                                        <span class="memory-count">3</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">privacy</span>
+                                        <span class="memory-count">4</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">workflow</span>
+                                        <span class="memory-count">2</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tree-node">
+                            <div class="node-content">
+                                <span class="node-icon">📁</span>
+                                <span class="node-label">interests</span>
+                            </div>
+                            <div class="node-children">
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">music</span>
+                                        <span class="memory-count">4</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">books</span>
+                                        <span class="memory-count">7</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">movies</span>
+                                        <span class="memory-count">3</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">sports</span>
+                                        <span class="memory-count">2</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">hobbies</span>
+                                        <span class="memory-count">5</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tree-node">
+                            <div class="node-content">
+                                <span class="node-icon">📁</span>
+                                <span class="node-label">technology</span>
+                            </div>
+                            <div class="node-children">
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">devices</span>
+                                        <span class="memory-count">3</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">tools</span>
+                                        <span class="memory-count">8</span>
+                                    </div>
+                                </div>
+                                <div class="tree-node">
+                                    <div class="node-content">
+                                        <span class="node-icon">📁</span>
+                                        <span class="node-label has-memories">platforms</span>
+                                        <span class="memory-count">6</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showRepoInfo() {
+            console.log('Showing repo info');
+
+            if (!connectedStorePath) {
+                showNotification('No repository connected. Use /connect <path> or /demo first.', 'error');
+                return;
+            }
+
+            if (!storeData) {
+                showNotification('No data available. Try /refresh to reload.', 'error');
+                return;
+            }
+
+            // Calculate repository statistics
+            const totalMemories = storeData.total_memories || storeData.memories?.length || 0;
+            const totalBranches = storeData.branches?.length || 0;
+            const totalCommits = storeData.commits?.length || 0;
+            const currentBranch = storeData.current_branch || 'unknown';
+
+            // Count unique paths and namespaces
+            const uniquePaths = new Set();
+            const uniqueNamespaces = new Set();
+
+            if (storeData.memories) {
+                storeData.memories.forEach(memory => {
+                    if (memory.path) uniquePaths.add(memory.path);
+                    if (memory.namespace) uniqueNamespaces.add(memory.namespace);
+                });
+            }
+
+            // Count tree levels
+            let maxDepth = 0;
+            if (storeData.tree) {
+                Object.keys(storeData.tree).forEach(path => {
+                    const depth = path.split('.').length;
+                    if (depth > maxDepth) maxDepth = depth;
+                });
+            }
+
+            // Format the repository info
+            const repoInfo = `📊 Repository Information
+
+🗂️  Store Path: ${connectedStorePath}
+🌟 Current Branch: ${currentBranch}
+🌿 Total Branches: ${totalBranches}
+📝 Total Commits: ${totalCommits}
+🧠 Total Memories: ${totalMemories}
+🏷️  Unique Paths: ${uniquePaths.size}
+👤 Namespaces: ${uniqueNamespaces.size}
+📊 Max Tree Depth: ${maxDepth}
+
+Branches: ${storeData.branches ? storeData.branches.join(', ') : 'none'}
+
+Recent Commits:
+${storeData.commits ? storeData.commits.slice(0, 5).map(c => `• ${c.hash}: ${c.message}`).join('\n') : 'No commits available'}`;
+
+            // Show the info in a notification with longer display time
+            showNotification(repoInfo, 'info', 10000); // 10 second display
+        }
+
+        function showIntegrationCode() {
+            console.log('Showing integration code');
+
+            // Use the actual connected path or provide helpful default
+            const storePath = connectedStorePath && connectedStorePath !== 'demo'
+                ? connectedStorePath
+                : '"/tmp/memoir_ui_store"  # Use your actual store path';
+
+            const integrationCode = `
+
+# Create components
+taxonomy = SemanticTaxonomy()
+llm = ChatOpenAI(model="gpt-4", temperature=0.1)
+classifier = IntelligentClassifier(
+    taxonomy=taxonomy,
+    llm=llm
+)
+
+# Initialize store with versioning
+prolly_store = ProllyTreeStore(
+    path="${storePath}",
+    enable_versioning=True,
+    auto_commit=True
+)
+
+# Create memory manager
+memory_manager = ProllyTreeMemoryStoreManager(
+    prolly_store=prolly_store,
+    classifier=classifier,
+    enable_versioning=True,
+    auto_commit=True
+)
+
+# LangGraph Integration
+langgraph_store = LangGraphMemoryStore(
+    memory_manager=memory_manager,
+    namespace=("conversation_123",)
+)
+
+# Use with LangGraph agents
+config = {"configurable": {"store": langgraph_store}}`;
+
+            // Show code in a modal-like notification
+            showCodeModal(integrationCode);
+        }
+
+        function showCodeModal(code) {
+            // Create a modal overlay
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                z-index: 10001;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                backdrop-filter: blur(4px);
+            `;
+
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: #0d1117;
+                color: #f1f5f9;
+                border-radius: 12px;
+                padding: 24px;
+                max-width: 900px;
+                max-height: 80vh;
+                overflow-y: auto;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 14px;
+                line-height: 1.6;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+                border: 1px solid rgba(48, 54, 61, 0.5);
+            `;
+
+            const closeButton = document.createElement('button');
+            closeButton.innerHTML = '✕';
+            closeButton.style.cssText = `
+                position: absolute;
+                top: 16px;
+                right: 20px;
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                font-size: 18px;
+                cursor: pointer;
+                padding: 4px;
+                border-radius: 4px;
+                transition: all 0.2s;
+            `;
+
+            closeButton.addEventListener('mouseenter', () => {
+                closeButton.style.background = 'rgba(239, 68, 68, 0.1)';
+                closeButton.style.color = '#ef4444';
+            });
+
+            closeButton.addEventListener('mouseleave', () => {
+                closeButton.style.background = 'transparent';
+                closeButton.style.color = '#94a3b8';
+            });
+
+            const copyButton = document.createElement('button');
+            copyButton.innerHTML = '📋';
+            copyButton.title = 'Copy code to clipboard';
+            copyButton.style.cssText = `
+                position: absolute;
+                top: 16px;
+                right: 60px;
+                background: transparent;
+                border: none;
+                color: #94a3b8;
+                font-size: 16px;
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: 4px;
+                transition: all 0.2s;
+            `;
+
+            copyButton.addEventListener('mouseenter', () => {
+                copyButton.style.background = 'rgba(34, 197, 94, 0.1)';
+                copyButton.style.color = '#22c55e';
+            });
+
+            copyButton.addEventListener('mouseleave', () => {
+                copyButton.style.background = 'transparent';
+                copyButton.style.color = '#94a3b8';
+            });
+
+            copyButton.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(code);
+                    copyButton.innerHTML = '✅';
+                    copyButton.style.color = '#22c55e';
+                    setTimeout(() => {
+                        copyButton.innerHTML = '📋';
+                        copyButton.style.color = '#94a3b8';
+                    }, 2000);
+                    showNotification('Code copied to clipboard!', 'success');
+                } catch (err) {
+                    console.error('Failed to copy code:', err);
+                    showNotification('Failed to copy code', 'error');
+                }
+            });
+
+            modalContent.style.position = 'relative';
+            modalContent.appendChild(closeButton);
+            modalContent.appendChild(copyButton);
+
+            // Create a pre/code element for syntax highlighting
+            const preElement = document.createElement('pre');
+            const codeElement = document.createElement('code');
+            codeElement.className = 'language-python';
+            codeElement.textContent = code;
+
+            // Apply syntax highlighting
+            hljs.highlightElement(codeElement);
+
+            preElement.appendChild(codeElement);
+            preElement.style.cssText = `
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                overflow-x: auto;
+                margin-right: 20px;
+            `;
+
+            modalContent.appendChild(preElement);
+
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+
+            // Close handlers
+            const closeModal = () => modal.remove();
+            closeButton.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+
+            // ESC key handler
+            const handleKeydown = (e) => {
+                if (e.key === 'Escape') {
+                    closeModal();
+                    document.removeEventListener('keydown', handleKeydown);
+                }
+            };
+            document.addEventListener('keydown', handleKeydown);
+        }
+
+        async function connectToStore(path) {
+            console.log('Attempting to connect to:', path);
+            showNotification(`Connecting to ${path}...`, 'info');
+
+            try {
+                // First try the API endpoint
+                let response;
+                let data = null;
+
+                // Try API endpoint (works when served via HTTP server)
+                try {
+                    const apiUrl = `/api/store?path=${encodeURIComponent(path)}`;
+                    console.log('Fetching from API:', apiUrl);
+                    response = await fetch(apiUrl);
+                    console.log('API Response status:', response.status, response.ok);
+
+                    if (response.ok) {
+                        data = await response.json();
+                        console.log('Data received from API:', data);
+                        connectedStorePath = path;
+                        storeData = data;
+                        showNotification(`Successfully connected to ${path}`, 'success');
+                        updateUIWithRealData(data);
+                        return;
+                    } else {
+                        console.error('API returned error:', response.status, response.statusText);
+                    }
+                } catch (e) {
+                    console.error('API fetch error:', e);
+                    console.log('API not available, trying fallback...');
+                }
+
+                // Try to read the metadata file directly (for file:// protocol)
+                try {
+                    response = await fetch(`file://${path}/ui_metadata.json`);
+                    if (response.ok) {
+                        data = await response.json();
+                        connectedStorePath = path;
+                        storeData = data;
+                        showNotification(`Connected to ${path} (file mode)`, 'success');
+                        updateUIWithRealData(data);
+                        return;
+                    }
+                } catch (e) {
+                    console.log('File system access not available');
+                }
+
+                // If both methods fail, show an error instead of falling back
+                showNotification(`Failed to connect to ${path}. Path may not exist or store may be empty. Try:\n1. Check if path exists\n2. Run initialization script\n3. Use HTTP server (python serve_ui.py)`, 'error');
+                return;
+            } catch (error) {
+                console.error('Connection error:', error);
+                showNotification(`Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function refreshStore() {
+            if (!connectedStorePath) {
+                showNotification('Not connected to any store', 'error');
+                return;
+            }
+            await connectToStore(connectedStorePath);
+        }
+
+        function updateUIWithRealData(data) {
+            console.log('Updating UI with real data:', data);
+
+            // Update branches
+            const branchSelector = document.querySelector('#branchSelector');
+            console.log('Branch selector element:', branchSelector);
+
+            if (branchSelector && data.branches) {
+                console.log('Updating branches:', data.branches);
+                branchSelector.innerHTML = '';
+                data.branches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch;
+
+                    // Shorten long branch names for display - show beginning instead of ending
+                    let displayName = branch;
+                    if (branch.length > 25) {
+                        // Truncate long names but keep the beginning part
+                        displayName = branch.slice(0, 22) + '...';
+                    }
+
+                    option.textContent = displayName;
+                    option.title = branch; // Show full name on hover
+
+                    if (branch === data.current_branch) {
+                        option.selected = true;
+                    }
+                    branchSelector.appendChild(option);
+                });
+            }
+
+            // Update commit timeline with real data
+            if (data.commits) {
+                const gitHistory = document.querySelector('.git-tree');
+                if (gitHistory) {
+                    // Clear existing commits except the time headers
+                    const commitNodes = gitHistory.querySelectorAll('.commit-node');
+                    commitNodes.forEach(node => node.remove());
+
+                    // Add real commits from all branches
+                    let insertAfter = gitHistory.querySelector('.time-header') || gitHistory.firstChild;
+
+                    // Handle different commit data formats
+                    const allCommits = [];
+                    if (Array.isArray(data.commits)) {
+                        // Format: [{hash: "abc", message: "..."}, ...]
+                        data.commits.forEach(commit => {
+                            allCommits.push({
+                                hash: commit.hash,
+                                message: commit.message,
+                                branch: data.current_branch || 'main'
+                            });
+                        });
+                    } else if (data.commits && typeof data.commits === 'object') {
+                        // Format: {main: ["hash1", "hash2"], feature: ["hash3"]}
+                        for (const [branch, commits] of Object.entries(data.commits)) {
+                            if (Array.isArray(commits)) {
+                                commits.forEach(hash => {
+                                    allCommits.push({ hash, branch, message: 'Memory store update' });
+                                });
+                            } else if (typeof commits === 'string') {
+                                allCommits.push({ hash: commits, branch, message: 'Memory store update' });
+                            }
+                        }
+                    }
+
+                    // Add ALL commits (no limit)
+                    allCommits.forEach((commit, index) => {
+                        const commitNode = document.createElement('div');
+                        commitNode.className = 'commit-node';
+                        commitNode.dataset.commit = commit.hash;
+
+                        const branchClass = commit.branch === 'main' ? 'main' : 'branch';
+                        const branchTag = commit.branch.replace('feature/', '').replace('experimental/', '');
+
+                        commitNode.innerHTML = `
+                            <div class="git-lines">
+                                <div class="commit-dot ${branchClass}"></div>
+                            </div>
+                            <div class="commit-info">
+                                <div class="commit-header">
+                                    <div class="commit-hash">${commit.hash.substring(0, 7)}</div>
+                                    <div class="branch-tag">${branchTag}</div>
+                                </div>
+                                <div class="commit-message">${commit.message || 'Memory store update'}</div>
+                                <div class="commit-meta">
+                                    <div class="commit-author">
+                                        <div class="author-avatar">M</div>
+                                        <span>Memoir</span>
+                                    </div>
+                                    <div class="commit-time">recent</div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Insert after the last element
+                        if (insertAfter.nextSibling) {
+                            gitHistory.insertBefore(commitNode, insertAfter.nextSibling);
+                        } else {
+                            gitHistory.appendChild(commitNode);
+                        }
+                        insertAfter = commitNode;
+
+                        // Re-attach click handlers
+                        commitNode.addEventListener('click', function() {
+                            document.querySelectorAll('.commit-node').forEach(i => i.classList.remove('active'));
+                            this.classList.add('active');
+                            const commitId = this.dataset.commit;
+                            document.getElementById('currentCommit').textContent = commitId;
+                            updateMemoryStructure(commitId);
+                        });
+                    });
+                }
+            }
+
+            // Update commits if available
+            if (data.commits && data.commits.main) {
+                const currentCommit = document.getElementById('currentCommit');
+                if (currentCommit && data.commits.main.length > 0) {
+                    currentCommit.textContent = data.commits.main[0];
+                }
+            }
+
+            // Update status
+            const statusEl = document.querySelector('.connection-status');
+            if (!statusEl) {
+                // Create status element
+                const headerControls = document.querySelector('.header-controls');
+                if (headerControls) {
+                    const status = document.createElement('div');
+                    status.className = 'connection-status';
+                    status.style.cssText = 'color: #10b981; font-size: 12px; margin-left: 10px; display: inline-flex; align-items: center;';
+                    status.innerHTML = `<span style="margin-right: 5px;">📁</span> Connected: ${connectedStorePath}`;
+                    headerControls.appendChild(status);
+                }
+            } else {
+                statusEl.innerHTML = `<span style="margin-right: 5px;">📁</span> Connected: ${connectedStorePath}`;
+            }
+
+            // Update tree view with real memory data
+            console.log('Checking if we should update tree view:', {
+                hasMemories: !!(data.memories && data.memories.length > 0),
+                hasTree: !!(data.tree && Object.keys(data.tree).length > 0),
+                memoriesCount: data.memories ? data.memories.length : 0,
+                treeKeysCount: data.tree ? Object.keys(data.tree).length : 0,
+                dataKeys: Object.keys(data)
+            });
+
+            // Always update the tree view when connected (even with empty data)
+            updateTreeViewWithRealData(data);
+
+            // Also update the global variable for graph rendering
+            window.realStoreData = data;
+
+            // Update graph view if it's currently visible
+            const graphView = document.getElementById('graphView');
+            const isGraphVisible = graphView && graphView.style.display !== 'none';
+            if (isGraphVisible) {
+                console.log('Graph is visible, updating graph view');
+                renderGraph();
+            }
+
+            // Show success in console
+            console.log('Successfully updated UI with data:', data);
+        }
+
+        function showNotification(message, type = 'info', duration = 3000) {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                background: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6'};
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                z-index: 10000;
+                animation: slideIn 0.3s ease;
+                white-space: pre-line;
+                font-family: 'JetBrains Mono', monospace;
+                font-size: 12px;
+                max-width: 400px;
+                line-height: 1.4;
+            `;
+            notification.textContent = message;
+
+            document.body.appendChild(notification);
+
+            // Remove after specified duration
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, duration);
+        }
+
+        // Add CSS animation
+        if (!document.querySelector('#notification-styles')) {
+            const style = document.createElement('style');
+            style.id = 'notification-styles';
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Git commit node clicks
+            document.querySelectorAll('.commit-node').forEach(item => {
+                item.addEventListener('click', function() {
+                    // Remove active from all items
+                    document.querySelectorAll('.commit-node').forEach(i => i.classList.remove('active'));
+                    // Add active to clicked item
+                    this.classList.add('active');
+
+                    const commitId = this.dataset.commit;
+                    document.getElementById('currentCommit').textContent = commitId;
+
+                    // Update memory structure based on commit
+                    updateMemoryStructure(commitId);
+                });
+            });
+
+            // Tree node clicks
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('.tree-node .node-content')) {
+                    const node = e.target.closest('.tree-node');
+                    const label = node.querySelector('.node-label');
+
+                    if (label.classList.contains('has-memories')) {
+                        showMemoryDetails(label.textContent);
+                    }
+                }
+            });
+
+            // View toggle
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+
+                    const view = this.dataset.view;
+                    if (view === 'tree') {
+                        document.getElementById('treeView').style.display = 'block';
+                        const graphView = document.getElementById('graphView');
+                        graphView.style.display = 'none';
+                        graphView.style.pointerEvents = 'none';
+                    } else {
+                        document.getElementById('treeView').style.display = 'none';
+                        const graphView = document.getElementById('graphView');
+                        graphView.style.display = 'block';
+                        graphView.style.pointerEvents = 'auto';
+                        renderGraph();
+                    }
+                });
+            });
+
+            // Close details
+            document.getElementById('closeDetails').addEventListener('click', function() {
+                document.getElementById('memoryDetails').classList.remove('open');
+            });
+
+        });
+
+        function updateTreeViewWithRealData(data) {
+            console.log('Updating tree view with real data:', data);
+
+            const treeView = document.getElementById('treeView');
+            if (!treeView) return;
+
+            // If we have a tree structure, use it
+            if (data.tree && Object.keys(data.tree).length > 0) {
+                console.log('Building tree from tree data:', data.tree);
+                treeView.innerHTML = buildTreeFromPaths(data.tree);
+            } else if (data.memories && data.memories.length > 0) {
+                console.log('Building tree from memory data:', data.memories);
+                // Build tree from memory paths
+                const pathCount = {};
+                data.memories.forEach(memory => {
+                    if (memory.path) {
+                        const parts = memory.path.split('.');
+                        let currentPath = '';
+                        parts.forEach(part => {
+                            currentPath = currentPath ? currentPath + '.' + part : part;
+                            pathCount[currentPath] = (pathCount[currentPath] || 0) + 1;
+                        });
+                    }
+                });
+                treeView.innerHTML = buildTreeFromPaths(pathCount);
+            } else {
+                // Show connection info and sample structure for demo
+                console.log('No memory data found, showing connection info');
+                treeView.innerHTML = `
+                    <div class="tree-node">
+                        <div class="node-content">
+                            <span class="node-icon">📁</span>
+                            <span class="node-label">Connected: ${data.store_path || 'memory store'}</span>
+                        </div>
+                        <div class="node-children">
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">Branches: ${data.branches ? data.branches.length : 0}</span>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">Total memories: ${data.total_memories || 0}</span>
+                                </div>
+                            </div>
+                            <div class="tree-node">
+                                <div class="node-content">
+                                    <span class="node-icon">📁</span>
+                                    <span class="node-label">Memory tree will populate with data</span>
+                                </div>
+                                <div class="node-children">
+                                    <div class="tree-node">
+                                        <div class="node-content">
+                                            <span class="node-icon">📁</span>
+                                            <span class="node-label">Add memories to see hierarchical structure</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function buildTreeFromPaths(pathCount) {
+            const tree = {};
+
+            // Build nested structure
+            Object.keys(pathCount).forEach(path => {
+                const parts = path.split('.');
+                let current = tree;
+                parts.forEach((part, index) => {
+                    if (!current[part]) {
+                        current[part] = { children: {}, count: 0 };
+                    }
+                    if (index === parts.length - 1) {
+                        current[part].count = pathCount[path];
+                    }
+                    current = current[part].children;
+                });
+            });
+
+            // Convert to HTML
+            function renderNode(name, node, level = 0) {
+                const icon = getIconForPath(name, level);
+                const hasMemories = node.count > 0;
+                const hasChildren = Object.keys(node.children).length > 0;
+
+                let html = `
+                    <div class="tree-node">
+                        <div class="node-content">
+                            <span class="node-icon">${icon}</span>
+                            <span class="node-label ${hasMemories ? 'has-memories' : ''}">${name}</span>
+                            ${hasMemories ? `<span class="memory-count">${node.count}</span>` : ''}
+                        </div>
+                `;
+
+                if (hasChildren) {
+                    html += '<div class="node-children">';
+                    Object.entries(node.children).forEach(([childName, childNode]) => {
+                        html += renderNode(childName, childNode, level + 1);
+                    });
+                    html += '</div>';
+                }
+
+                html += '</div>';
+                return html;
+            }
+
+            let result = '';
+            Object.entries(tree).forEach(([name, node]) => {
+                result += renderNode(name, node);
+            });
+
+            return result || '<div class="tree-node"><div class="node-content"><span class="node-icon">📁</span><span class="node-label">No memory paths found</span></div></div>';
+        }
+
+        function getIconForPath(name, level) {
+            // Icons based on common path patterns - all using folder emoji
+            const icons = {
+                'profile': '📁',
+                'personal': '📁',
+                'professional': '📁',
+                'preferences': '📁',
+                'interests': '📁',
+                'technology': '📁',
+                'skills': '📁',
+                'experience': '📁',
+                'identity': '📁',
+                'location': '📁',
+                'relationships': '📁',
+                'health': '📁',
+                'goals': '📁',
+                'learning': '📁',
+                'project': '📁',
+                'technical': '📁',
+                'experimental': '📁',
+                'default': '📁'
+            };
+            return icons[name] || icons.default;
+        }
+
+        function buildGraphDataFromRealData(data) {
+            const nodes = [];
+            const links = [];
+            const nodeMap = new Map();
+
+            // Process memories or tree data
+            let pathCount = {};
+            if (data.tree && Object.keys(data.tree).length > 0) {
+                pathCount = data.tree;
+            } else if (data.memories && data.memories.length > 0) {
+                data.memories.forEach(memory => {
+                    if (memory.path) {
+                        const parts = memory.path.split('.');
+                        let currentPath = '';
+                        parts.forEach(part => {
+                            currentPath = currentPath ? currentPath + '.' + part : part;
+                            pathCount[currentPath] = (pathCount[currentPath] || 0) + 1;
+                        });
+                    }
+                });
+            }
+
+            // Create nodes from paths - limit to 3 levels deep for cleaner visualization
+            Object.keys(pathCount).forEach(path => {
+                const parts = path.split('.');
+                const name = parts[parts.length - 1];
+                const level = parts.length - 1;
+
+                // Only include paths up to 3 levels deep (0, 1, 2)
+                if (level <= 2 && !nodeMap.has(path)) {
+                    nodes.push({
+                        id: path,
+                        name: name,
+                        level: level,
+                        count: pathCount[path] || 0,
+                        x: 0, // Will be positioned later
+                        y: 0, // Will be positioned later
+                        fx: null,
+                        fy: null
+                    });
+                    nodeMap.set(path, nodes.length - 1);
+                }
+
+                // Create link to parent (only if both parent and child are within depth limit)
+                if (parts.length > 1 && level <= 2) {
+                    const parentPath = parts.slice(0, -1).join('.');
+                    const parentLevel = parts.length - 2;
+
+                    if (parentLevel <= 2 && pathCount[parentPath] !== undefined) {
+                        links.push({
+                            source: parentPath,
+                            target: path,
+                            strength: 0.5
+                        });
+                    }
+                }
+            });
+
+            // Position nodes in organized radial layout
+            positionNodesRadially(nodes);
+
+            return { nodes, links };
+        }
+
+        function positionNodesRadially(nodes) {
+            // Group nodes by level
+            const nodesByLevel = { 0: [], 1: [], 2: [] };
+            nodes.forEach(node => {
+                if (nodesByLevel[node.level]) {
+                    nodesByLevel[node.level].push(node);
+                }
+            });
+
+            const centerX = 400; // Center of the visualization
+            const centerY = 300;
+
+            // Position Level 0 nodes (root) in the center
+            if (nodesByLevel[0].length > 0) {
+                if (nodesByLevel[0].length === 1) {
+                    // Single root node in the center
+                    nodesByLevel[0][0].x = centerX;
+                    nodesByLevel[0][0].y = centerY;
+                } else {
+                    // Multiple root nodes in a small circle around center
+                    const radius = 60;
+                    nodesByLevel[0].forEach((node, i) => {
+                        const angle = (i * 2 * Math.PI) / nodesByLevel[0].length;
+                        node.x = centerX + radius * Math.cos(angle);
+                        node.y = centerY + radius * Math.sin(angle);
+                    });
+                }
+            }
+
+            // Position Level 1 nodes (categories) in a circle around level 0
+            if (nodesByLevel[1].length > 0) {
+                const radius = 150;
+                nodesByLevel[1].forEach((node, i) => {
+                    const angle = (i * 2 * Math.PI) / nodesByLevel[1].length - Math.PI / 2; // Start from top
+                    node.x = centerX + radius * Math.cos(angle);
+                    node.y = centerY + radius * Math.sin(angle);
+                });
+            }
+
+            // Position Level 2 nodes (specific) in outer circle, grouped by their parent
+            if (nodesByLevel[2].length > 0) {
+                const radius = 250;
+
+                // Group level 2 nodes by their parent (level 1)
+                const nodesByParent = {};
+                nodesByLevel[2].forEach(node => {
+                    const parentPath = node.id.split('.').slice(0, -1).join('.');
+                    if (!nodesByParent[parentPath]) {
+                        nodesByParent[parentPath] = [];
+                    }
+                    nodesByParent[parentPath].push(node);
+                });
+
+                // Position each group around their parent
+                Object.entries(nodesByParent).forEach(([parentPath, childNodes]) => {
+                    const parent = nodesByLevel[1].find(n => n.id === parentPath);
+                    if (parent) {
+                        // Calculate angle from center to parent
+                        const parentAngle = Math.atan2(parent.y - centerY, parent.x - centerX);
+
+                        // Position children in an arc around the parent's direction
+                        childNodes.forEach((child, i) => {
+                            const angleOffset = (i - (childNodes.length - 1) / 2) * (Math.PI / 6); // 30 degree spacing
+                            const childAngle = parentAngle + angleOffset;
+                            child.x = centerX + radius * Math.cos(childAngle);
+                            child.y = centerY + radius * Math.sin(childAngle);
+                        });
+                    } else {
+                        // Fallback: distribute evenly around outer circle
+                        childNodes.forEach((child, i) => {
+                            const angle = (i * 2 * Math.PI) / nodesByLevel[2].length;
+                            child.x = centerX + radius * Math.cos(angle);
+                            child.y = centerY + radius * Math.sin(angle);
+                        });
+                    }
+                });
+            }
+        }
+
+        function buildGraphDataFromMockData() {
+            // Build graph data from the existing mock structure
+            const nodes = [
+                { id: 'profile', name: 'profile', level: 0, count: 118, x: 400, y: 300, fx: null, fy: null },
+                { id: 'profile.personal', name: 'personal', level: 1, count: 26, x: 200, y: 200, fx: null, fy: null },
+                { id: 'profile.professional', name: 'professional', level: 1, count: 34, x: 600, y: 200, fx: null, fy: null },
+                { id: 'profile.preferences', name: 'preferences', level: 1, count: 14, x: 200, y: 400, fx: null, fy: null },
+                { id: 'profile.interests', name: 'interests', level: 1, count: 21, x: 600, y: 400, fx: null, fy: null },
+                { id: 'profile.technology', name: 'technology', level: 1, count: 17, x: 400, y: 500, fx: null, fy: null }
+            ];
+
+            const links = [
+                { source: 'profile', target: 'profile.personal', strength: 0.5 },
+                { source: 'profile', target: 'profile.professional', strength: 0.5 },
+                { source: 'profile', target: 'profile.preferences', strength: 0.5 },
+                { source: 'profile', target: 'profile.interests', strength: 0.5 },
+                { source: 'profile', target: 'profile.technology', strength: 0.5 }
+            ];
+
+            return { nodes, links };
+        }
+
+        function updateMemoryStructure(commitId) {
+            // Update memory counts based on commit (for mock data)
+            const data = commits[commitId];
+            if (data && data.tree) {
+                Object.entries(data.tree).forEach(([path, count]) => {
+                    const pathParts = path.split('.');
+                    const nodeName = pathParts[pathParts.length - 1];
+
+                    document.querySelectorAll('.tree-node').forEach(node => {
+                        const label = node.querySelector('.node-label');
+                        if (label && label.textContent === nodeName) {
+                            const countSpan = node.querySelector('.memory-count');
+                            if (countSpan) {
+                                countSpan.textContent = count;
+                                if (count > 0) {
+                                    label.classList.add('has-memories');
+                                } else {
+                                    label.classList.remove('has-memories');
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+        }
+
+        function showMemoryDetails(path) {
+            document.getElementById('detailsPath').textContent = `profile.personal.${path}`;
+            document.getElementById('memoryDetails').classList.add('open');
+        }
+
+        function renderGraph() {
+            // Use real data if available, otherwise fall back to mock data
+            let graphData;
+            if (window.realStoreData && (window.realStoreData.memories || window.realStoreData.tree)) {
+                graphData = buildGraphDataFromRealData(window.realStoreData);
+            } else {
+                graphData = buildGraphDataFromMockData();
+            }
+
+            // Optimized D3.js force-directed graph with pre-calculated positions
+            const svg = d3.select('#graphSvg');
+            svg.selectAll('*').remove();
+
+            const width = svg.node().getBoundingClientRect().width;
+            const height = svg.node().getBoundingClientRect().height;
+
+            // Create container group for zoom/pan functionality
+            const container = svg.append('g').attr('class', 'zoom-container');
+
+            // Add zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', function(event) {
+                    container.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+
+            // Connect zoom controls to D3 zoom behavior
+            d3.select('#zoomIn').on('click', () => {
+                svg.transition().duration(300).call(
+                    zoom.scaleBy, 1.5
+                );
+            });
+
+            d3.select('#zoomOut').on('click', () => {
+                svg.transition().duration(300).call(
+                    zoom.scaleBy, 1 / 1.5
+                );
+            });
+
+            d3.select('#zoomReset').on('click', () => {
+                svg.transition().duration(500).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                );
+            });
+
+            // Use the graph data from real or mock data
+            const nodes = graphData.nodes;
+            const links = graphData.links;
+
+            // Pre-calculated positions for comprehensive radial layout (fallback if no positions)
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius1 = 120; // Main categories
+            const radius2 = 220; // Leaf nodes
+
+            // Ensure nodes have positions
+            nodes.forEach((node, i) => {
+                if (!node.x || !node.y) {
+                    const angle = (i * 360) / nodes.length;
+                    const radius = node.level === 0 ? 0 : (node.level === 1 ? radius1 : radius2);
+                    node.x = centerX + radius * Math.cos((angle - 90) * Math.PI / 180);
+                    node.y = centerY + radius * Math.sin((angle - 90) * Math.PI / 180);
+                }
+            });
+
+            // Keep original static layout for reference
+            const staticNodes = [
+                // Center node
+                {id: 'profile', group: 1, x: centerX, y: centerY, fixed: true},
+
+                // Second ring - main categories (6 categories at 60° intervals)
+                {id: 'personal', group: 2, x: centerX + radius1 * Math.cos(-90 * Math.PI/180), y: centerY + radius1 * Math.sin(-90 * Math.PI/180), fixed: true},
+                {id: 'professional', group: 2, x: centerX + radius1 * Math.cos(-30 * Math.PI/180), y: centerY + radius1 * Math.sin(-30 * Math.PI/180), fixed: true},
+                {id: 'preferences', group: 2, x: centerX + radius1 * Math.cos(30 * Math.PI/180), y: centerY + radius1 * Math.sin(30 * Math.PI/180), fixed: true},
+                {id: 'interests', group: 2, x: centerX + radius1 * Math.cos(90 * Math.PI/180), y: centerY + radius1 * Math.sin(90 * Math.PI/180), fixed: true},
+                {id: 'technology', group: 2, x: centerX + radius1 * Math.cos(150 * Math.PI/180), y: centerY + radius1 * Math.sin(150 * Math.PI/180), fixed: true},
+
+                // Third ring - All 23 leaf nodes evenly distributed around circle
+                // Personal subcategories (positions 0-4)
+                {id: 'identity', group: 3, x: centerX + radius2 * Math.cos(0 * Math.PI/180), y: centerY + radius2 * Math.sin(0 * Math.PI/180), fixed: true},
+                {id: 'location', group: 3, x: centerX + radius2 * Math.cos(15 * Math.PI/180), y: centerY + radius2 * Math.sin(15 * Math.PI/180), fixed: true},
+                {id: 'relationships', group: 3, x: centerX + radius2 * Math.cos(30 * Math.PI/180), y: centerY + radius2 * Math.sin(30 * Math.PI/180), fixed: true},
+                {id: 'health', group: 3, x: centerX + radius2 * Math.cos(45 * Math.PI/180), y: centerY + radius2 * Math.sin(45 * Math.PI/180), fixed: true},
+                {id: 'goals', group: 3, x: centerX + radius2 * Math.cos(60 * Math.PI/180), y: centerY + radius2 * Math.sin(60 * Math.PI/180), fixed: true},
+
+                // Professional subcategories (positions 5-9)
+                {id: 'skills', group: 3, x: centerX + radius2 * Math.cos(75 * Math.PI/180), y: centerY + radius2 * Math.sin(75 * Math.PI/180), fixed: true},
+                {id: 'experience', group: 3, x: centerX + radius2 * Math.cos(90 * Math.PI/180), y: centerY + radius2 * Math.sin(90 * Math.PI/180), fixed: true},
+                {id: 'companies', group: 3, x: centerX + radius2 * Math.cos(105 * Math.PI/180), y: centerY + radius2 * Math.sin(105 * Math.PI/180), fixed: true},
+                {id: 'education', group: 3, x: centerX + radius2 * Math.cos(120 * Math.PI/180), y: centerY + radius2 * Math.sin(120 * Math.PI/180), fixed: true},
+                {id: 'achievements', group: 3, x: centerX + radius2 * Math.cos(135 * Math.PI/180), y: centerY + radius2 * Math.sin(135 * Math.PI/180), fixed: true},
+
+                // Preferences subcategories (positions 10-13)
+                {id: 'interface', group: 3, x: centerX + radius2 * Math.cos(150 * Math.PI/180), y: centerY + radius2 * Math.sin(150 * Math.PI/180), fixed: true},
+                {id: 'notifications', group: 3, x: centerX + radius2 * Math.cos(165 * Math.PI/180), y: centerY + radius2 * Math.sin(165 * Math.PI/180), fixed: true},
+                {id: 'privacy', group: 3, x: centerX + radius2 * Math.cos(180 * Math.PI/180), y: centerY + radius2 * Math.sin(180 * Math.PI/180), fixed: true},
+                {id: 'workflow', group: 3, x: centerX + radius2 * Math.cos(195 * Math.PI/180), y: centerY + radius2 * Math.sin(195 * Math.PI/180), fixed: true},
+
+                // Interests subcategories (positions 14-18)
+                {id: 'music', group: 3, x: centerX + radius2 * Math.cos(210 * Math.PI/180), y: centerY + radius2 * Math.sin(210 * Math.PI/180), fixed: true},
+                {id: 'books', group: 3, x: centerX + radius2 * Math.cos(225 * Math.PI/180), y: centerY + radius2 * Math.sin(225 * Math.PI/180), fixed: true},
+                {id: 'movies', group: 3, x: centerX + radius2 * Math.cos(240 * Math.PI/180), y: centerY + radius2 * Math.sin(240 * Math.PI/180), fixed: true},
+                {id: 'sports', group: 3, x: centerX + radius2 * Math.cos(255 * Math.PI/180), y: centerY + radius2 * Math.sin(255 * Math.PI/180), fixed: true},
+                {id: 'hobbies', group: 3, x: centerX + radius2 * Math.cos(270 * Math.PI/180), y: centerY + radius2 * Math.sin(270 * Math.PI/180), fixed: true},
+
+                // Technology subcategories (positions 19-21)
+                {id: 'devices', group: 3, x: centerX + radius2 * Math.cos(285 * Math.PI/180), y: centerY + radius2 * Math.sin(285 * Math.PI/180), fixed: true},
+                {id: 'tools', group: 3, x: centerX + radius2 * Math.cos(300 * Math.PI/180), y: centerY + radius2 * Math.sin(300 * Math.PI/180), fixed: true},
+                {id: 'platforms', group: 3, x: centerX + radius2 * Math.cos(315 * Math.PI/180), y: centerY + radius2 * Math.sin(315 * Math.PI/180), fixed: true}
+            ];
+
+            // Links are now provided by graphData.links (defined above)
+
+            // Create a minimal simulation since we're using fixed positioning
+            const simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+                    // Link distances based on hierarchy levels
+                    const sourceLevel = d.source.level || 0;
+                    const targetLevel = d.target.level || 1;
+                    if (sourceLevel === 0 && targetLevel === 1) return 120; // Root to categories
+                    if (sourceLevel === 1 && targetLevel === 2) return 80;  // Categories to specifics
+                    return 100; // Default
+                }).strength(0.3)) // Stronger links to maintain structure
+                .force('collision', d3.forceCollide().radius(d => {
+                    // Collision radius based on level
+                    if (d.level === 0) return 35;      // Largest collision for root
+                    if (d.level === 1) return 25;      // Medium for categories
+                    return 18;                          // Smallest for specifics
+                }))
+                .alpha(0.3)  // Moderate energy to allow some adjustment
+                .alphaDecay(0.05)  // Slower decay to settle into position
+                .alphaMin(0.01);   // Stop when mostly stable
+
+            // Create links with immediate positioning
+            const linkGroup = container.append('g').attr('class', 'links');
+            const link = linkGroup.selectAll('line')
+                .data(links)
+                .enter().append('line')
+                .attr('class', 'graph-link')
+                .attr('stroke-width', 2)
+                .attr('x1', d => {
+                    const source = nodes.find(n => n.id === d.source);
+                    return source ? source.x : 0;
+                })
+                .attr('y1', d => {
+                    const source = nodes.find(n => n.id === d.source);
+                    return source ? source.y : 0;
+                })
+                .attr('x2', d => {
+                    const target = nodes.find(n => n.id === d.target);
+                    return target ? target.x : 0;
+                })
+                .attr('y2', d => {
+                    const target = nodes.find(n => n.id === d.target);
+                    return target ? target.y : 0;
+                });
+
+            // Create nodes with immediate positioning and modern styling
+            const nodeGroup = container.append('g').attr('class', 'nodes');
+            const node = nodeGroup.selectAll('circle')
+                .data(nodes)
+                .enter().append('circle')
+                .attr('class', 'graph-node')
+                .attr('r', d => {
+                    // Size based on level: Level 0 (root) = largest, Level 2 = smallest
+                    if (d.level === 0) return 28;      // Root nodes (profile, projects, etc.)
+                    if (d.level === 1) return 18;      // Category nodes (personal, professional, etc.)
+                    return 12;                          // Specific nodes (name, skills, etc.)
+                })
+                .attr('fill', d => {
+                    // Color based on level
+                    if (d.level === 0) return 'url(#centerGradient)';      // Blue gradient for root
+                    if (d.level === 1) return 'url(#midGradient)';         // Purple gradient for categories
+                    return 'url(#leafGradient)';                           // Pink gradient for specifics
+                })
+                .attr('stroke', d => {
+                    // Border color based on level
+                    if (d.level === 0) return '#1e40af';      // Deep blue for root
+                    if (d.level === 1) return '#7c3aed';      // Purple for categories
+                    return '#e11d48';                          // Red for specifics
+                })
+                .attr('stroke-width', d => {
+                    // Border thickness based on level
+                    if (d.level === 0) return 4;              // Thickest for root
+                    if (d.level === 1) return 3;              // Medium for categories
+                    return 2;                                  // Thinnest for specifics
+                })
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .style('filter', d => {
+                    // Shadow effect based on level
+                    if (d.level === 0) return 'drop-shadow(0 6px 16px rgba(30, 64, 175, 0.4))';     // Strong blue shadow for root
+                    if (d.level === 1) return 'drop-shadow(0 4px 12px rgba(124, 58, 237, 0.3))';    // Purple shadow for categories
+                    return 'drop-shadow(0 2px 8px rgba(225, 29, 72, 0.3))';                         // Red shadow for specifics
+                })
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+
+            // Add gradient definitions for modern styling
+            const defs = svg.append('defs');
+
+            const centerGradient = defs.append('linearGradient')
+                .attr('id', 'centerGradient')
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', '0%').attr('y1', '0%')
+                .attr('x2', '100%').attr('y2', '100%');
+            centerGradient.append('stop').attr('offset', '0%').attr('stop-color', '#22d3ee');
+            centerGradient.append('stop').attr('offset', '100%').attr('stop-color', '#0891b2');
+
+            const midGradient = defs.append('linearGradient')
+                .attr('id', 'midGradient')
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', '0%').attr('y1', '0%')
+                .attr('x2', '100%').attr('y2', '100%');
+            midGradient.append('stop').attr('offset', '0%').attr('stop-color', '#a78bfa');
+            midGradient.append('stop').attr('offset', '100%').attr('stop-color', '#7c3aed');
+
+            const leafGradient = defs.append('linearGradient')
+                .attr('id', 'leafGradient')
+                .attr('gradientUnits', 'userSpaceOnUse')
+                .attr('x1', '0%').attr('y1', '0%')
+                .attr('x2', '100%').attr('y2', '100%');
+            leafGradient.append('stop').attr('offset', '0%').attr('stop-color', '#fb7185');
+            leafGradient.append('stop').attr('offset', '100%').attr('stop-color', '#e11d48');
+
+            // Create text labels with immediate positioning
+            const textGroup = container.append('g').attr('class', 'labels');
+            const text = textGroup.selectAll('text')
+                .data(nodes)
+                .enter().append('text')
+                .attr('class', 'node-text')
+                .attr('x', d => d.x)
+                .attr('y', d => d.y + 6) // Slightly lower for better centering
+                .attr('font-weight', d => d.group === 1 ? '700' : d.group === 2 ? '600' : '500')
+                .attr('font-size', d => d.group === 1 ? '14px' : d.group === 2 ? '11px' : '9px') // Smaller text for more nodes
+                .attr('text-shadow', d => d.group === 1 ? '0 2px 4px rgba(0,0,0,0.5)' : '0 1px 2px rgba(0,0,0,0.3)')
+                .text(d => d.id);
+
+            // Optimized tick function with reduced DOM updates
+            let tickCount = 0;
+            simulation.on('tick', () => {
+                tickCount++;
+
+                // Only update DOM every few ticks for better performance
+                if (tickCount % 2 === 0) {
+                    link.attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    node.attr('cx', d => d.x)
+                        .attr('cy', d => d.y);
+
+                    text.attr('x', d => d.x)
+                        .attr('y', d => d.y + 6);
+                }
+            });
+
+            // Stop simulation after short time for instant feel
+            setTimeout(() => {
+                simulation.stop();
+            }, 500);
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.1).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            // Add click interactions for nodes
+            node.on('click', function(event, d) {
+                // Highlight connected nodes
+                const connectedNodes = new Set([d.id]);
+                links.forEach(link => {
+                    if (link.source === d.id || link.source.id === d.id) {
+                        connectedNodes.add(typeof link.target === 'string' ? link.target : link.target.id);
+                    }
+                    if (link.target === d.id || link.target.id === d.id) {
+                        connectedNodes.add(typeof link.source === 'string' ? link.source : link.source.id);
+                    }
+                });
+
+                // Apply highlighting
+                node.style('opacity', n => connectedNodes.has(n.id) ? 1 : 0.3);
+                link.style('opacity', l => {
+                    const sourceId = typeof l.source === 'string' ? l.source : l.source.id;
+                    const targetId = typeof l.target === 'string' ? l.target : l.target.id;
+                    return connectedNodes.has(sourceId) && connectedNodes.has(targetId) ? 1 : 0.1;
+                });
+                text.style('opacity', n => connectedNodes.has(n.id) ? 1 : 0.3);
+
+                // Reset after delay
+                setTimeout(() => {
+                    node.style('opacity', 1);
+                    link.style('opacity', 1);
+                    text.style('opacity', 1);
+                }, 2000);
+
+                // Show memory details if it's a leaf node
+                if (d.group === 3) {
+                    showMemoryDetails(d.id);
+                }
+            });
+        }
+
+        // Available commands with descriptions
+        const availableCommands = [
+            { cmd: '/connect', args: '<path>', desc: 'Connect to memory store at path' },
+            { cmd: '/refresh', args: '', desc: 'Refresh current connection' },
+            { cmd: '/demo', args: '', desc: 'Show original demo data' },
+            { cmd: '/repo', args: '', desc: 'Show repository information' },
+            { cmd: '/code', args: '', desc: 'Show Python integration code' },
+            { cmd: '/help', args: '', desc: 'Show all available commands' },
+            { cmd: '/share', args: '<path>', desc: 'Share memory or branch (coming soon)', placeholder: true },
+            { cmd: '/summarize', args: '[path]', desc: 'Generate summary of memories (coming soon)', placeholder: true },
+            { cmd: '/remember', args: '<content>', desc: 'Add memory with smart classification (coming soon)', placeholder: true },
+            { cmd: '/forget', args: '<pattern>', desc: 'Remove memories matching pattern (coming soon)', placeholder: true },
+            { cmd: '/time-travel', args: '<commit>', desc: 'View memories at specific commit (coming soon)', placeholder: true },
+            { cmd: '/blame', args: '<path>', desc: 'Show history of memory changes (coming soon)', placeholder: true },
+            { cmd: '/timeline', args: '[filter]', desc: 'Show chronological memory timeline (coming soon)', placeholder: true },
+            { cmd: '/location', args: '<place>', desc: 'Filter memories by location context (coming soon)', placeholder: true },
+            { cmd: '/what-if', args: '<scenario>', desc: 'Simulate hypothetical memory scenarios (coming soon)', placeholder: true },
+            { cmd: '/never-mind', args: '', desc: 'Undo last operation or clear current context (coming soon)', placeholder: true },
+            { cmd: '/merge', args: '<branch>', desc: 'Merge memory branch into current branch (coming soon)', placeholder: true },
+            { cmd: '/what-happened', args: '[timeframe]', desc: 'Show recent memory changes and activity (coming soon)', placeholder: true },
+            { cmd: '/organize', args: '[pattern]', desc: 'Auto-organize and restructure memories (coming soon)', placeholder: true },
+            { cmd: '/sign-in', args: '[provider]', desc: 'Sign in to sync memories across devices (coming soon)', placeholder: true },
+            { cmd: '/sign-out', args: '', desc: 'Sign out and clear session data (coming soon)', placeholder: true },
+            { cmd: '/upgrade', args: '', desc: 'Upgrade to premium features (coming soon)', placeholder: true },
+            { cmd: '/portal', args: '[destination]', desc: 'Open web portal or external integrations (coming soon)', placeholder: true },
+            { cmd: '/test', args: '[suite]', desc: 'Run memory system tests and diagnostics (coming soon)', placeholder: true },
+            { cmd: '/prompt', args: '<template>', desc: 'Create and manage AI prompt templates (coming soon)', placeholder: true },
+            { cmd: '/encrypt', args: '[method]', desc: 'Encrypt memory data with security options (coming soon)', placeholder: true }
+        ];
+
+        let selectedCommandIndex = -1;
+
+        // Memory Input Bar Functionality
+        function initializeMemoryInput() {
+            const input = document.getElementById('memoryInput');
+            const queryBtn = document.getElementById('queryBtn');
+            const addBtn = document.getElementById('addBtn');
+            const suggestions = document.getElementById('inputSuggestions');
+
+            // Create command suggestions element
+            createCommandSuggestionsElement();
+
+            // Hide command suggestions when clicking outside input area
+            document.addEventListener('click', (e) => {
+                const input = document.getElementById('memoryInput');
+                const commandSuggestions = document.getElementById('commandSuggestions');
+
+                if (input && commandSuggestions &&
+                    !input.contains(e.target) &&
+                    !commandSuggestions.contains(e.target)) {
+                    hideCommandSuggestions();
+                }
+            });
+
+            // Hide command suggestions when mouse leaves the input container
+            const inputContainer = input.parentElement;
+            inputContainer.addEventListener('mouseleave', () => {
+                // Always hide when mouse leaves, regardless of focus
+                setTimeout(() => {
+                    hideCommandSuggestions();
+                }, 100);
+            });
+
+
+            // Handle input focus and blur
+            input.addEventListener('focus', () => {
+                if (!input.value.startsWith('/')) {
+                    suggestions.style.display = 'block';
+                }
+            });
+
+            input.addEventListener('blur', (e) => {
+                // Delay hiding to allow clicking on suggestions
+                setTimeout(() => {
+                    suggestions.style.display = 'none';
+                    hideCommandSuggestions();
+                }, 200);
+            });
+
+            // Handle Enter key
+            input.addEventListener('keydown', async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+
+                    // Check if user selected a command suggestion with arrow keys
+                    const suggestions = document.getElementById('commandSuggestions');
+                    if (suggestions && suggestions.style.display === 'block' && selectedCommandIndex >= 0) {
+                        const items = suggestions.querySelectorAll('.command-suggestion');
+                        const selectedCmd = availableCommands[parseInt(items[selectedCommandIndex].dataset.index)];
+
+                        // Handle placeholder commands differently
+                        if (selectedCmd.placeholder) {
+                            showNotification(`${selectedCmd.cmd} - ${selectedCmd.desc}`, 'info', 3000);
+                            hideCommandSuggestions();
+                            input.value = '';
+                        } else {
+                            selectCommand(selectedCmd.cmd, selectedCmd.args);
+                        }
+                        return;
+                    }
+
+                    const value = input.value.trim();
+                    if (value) {
+                        // Check if it's a command
+                        if (value.startsWith('/')) {
+                            console.log('Processing command:', value);
+                            await handleCommand(value);
+                            input.value = ''; // Clear input after command
+                            hideCommandSuggestions();
+                        } else {
+                            // Default action: query if it's a question, add if it's a statement
+                            if (value.includes('?') || value.toLowerCase().startsWith('what') ||
+                                value.toLowerCase().startsWith('how') || value.toLowerCase().startsWith('when') ||
+                                value.toLowerCase().startsWith('where') || value.toLowerCase().startsWith('why')) {
+                                handleQuery(value);
+                            } else {
+                                handleAddMemory(value);
+                            }
+                        }
+                    }
+                } else if (e.key === 'Escape') {
+                    hideCommandSuggestions();
+                } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    const suggestions = document.getElementById('commandSuggestions');
+                    if (suggestions && suggestions.style.display === 'block') {
+                        e.preventDefault();
+                        navigateCommandSuggestions(e.key === 'ArrowDown' ? 1 : -1);
+                    }
+                }
+            });
+
+            // Handle input changes for command suggestions
+            input.addEventListener('input', (e) => {
+                const value = e.target.value;
+                if (value.startsWith('/')) {
+                    showCommandSuggestions(value);
+                    // Hide original suggestions when showing commands
+                    suggestions.style.display = 'none';
+                } else {
+                    hideCommandSuggestions();
+                    // Show original suggestions if input is focused and not a command
+                    if (document.activeElement === input) {
+                        suggestions.style.display = 'block';
+                    }
+                }
+            });
+
+
+            // Query button functionality
+            queryBtn.addEventListener('click', () => {
+                const value = input.value.trim();
+                if (value) {
+                    handleQuery(value);
+                }
+            });
+
+            // Add button functionality
+            addBtn.addEventListener('click', () => {
+                const value = input.value.trim();
+                if (value) {
+                    handleAddMemory(value);
+                }
+            });
+
+            // Suggestion clicks
+            const suggestionItems = document.querySelectorAll('.suggestion-item');
+            suggestionItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    const text = item.textContent;
+                    if (text.includes('Search') || text.includes('Query')) {
+                        const query = text.match(/"([^"]+)"/)?.[1] || text.split(' ').slice(-2).join(' ');
+                        input.value = query;
+                        handleQuery(query);
+                    } else if (text.includes('Add')) {
+                        const memory = text.match(/"([^"]+)"/)?.[1] || text.split(' ').slice(-3).join(' ');
+                        input.value = memory;
+                        handleAddMemory(memory);
+                    }
+                });
+            });
+        }
+
+        function createCommandSuggestionsElement() {
+            const input = document.getElementById('memoryInput');
+            const inputContainer = input.parentElement;
+
+            const commandSuggestions = document.createElement('div');
+            commandSuggestions.id = 'commandSuggestions';
+            commandSuggestions.style.cssText = `
+                position: absolute;
+                bottom: 100%;
+                left: 0;
+                right: 0;
+                background: rgba(15, 23, 42, 0.95);
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(71, 85, 105, 0.3);
+                border-bottom: none;
+                border-radius: 12px 12px 0 0;
+                box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+                z-index: 1001;
+                display: none;
+                max-height: 300px;
+                pointer-events: none;
+                overflow-y: auto;
+            `;
+
+            inputContainer.appendChild(commandSuggestions);
+        }
+
+        function showCommandSuggestions(input) {
+            const suggestions = document.getElementById('commandSuggestions');
+            if (!suggestions) return;
+
+            const query = input.toLowerCase();
+            const matchingCommands = availableCommands.filter(cmd =>
+                cmd.cmd.startsWith(query) || query === '/'
+            );
+
+            if (matchingCommands.length === 0) {
+                hideCommandSuggestions();
+                return;
+            }
+
+            suggestions.innerHTML = matchingCommands.map((cmd, index) => {
+                const isPlaceholder = cmd.placeholder;
+                const commandColor = isPlaceholder ? '#6b7280' : '#22d3ee';
+                const descColor = isPlaceholder ? '#6b7280' : '#94a3b8';
+                const hoverBg = isPlaceholder ? 'rgba(107, 114, 128, 0.1)' : 'rgba(99, 102, 241, 0.1)';
+                const cursor = isPlaceholder ? 'not-allowed' : 'pointer';
+                const clickHandler = isPlaceholder ? `showNotification('${cmd.cmd} - ${cmd.desc}', 'info', 3000)` : `selectCommand('${cmd.cmd}', '${cmd.args}')`;
+
+                return `
+                <div class="command-suggestion" data-index="${index}" style="
+                    padding: 12px 16px;
+                    cursor: ${cursor};
+                    border-bottom: 1px solid rgba(71, 85, 105, 0.2);
+                    transition: all 0.2s ease;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    ${isPlaceholder ? 'opacity: 0.7;' : ''}
+                " onmouseover="this.style.background='${hoverBg}'"
+                   onmouseout="this.style.background='transparent'"
+                   onclick="${clickHandler}">
+                    <div>
+                        <div style="color: ${commandColor}; font-family: 'JetBrains Mono', monospace; font-weight: 600;">
+                            ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
+                            ${isPlaceholder ? ' <span style="color: #f59e0b; font-size: 10px;">⚡ SOON</span>' : ''}
+                        </div>
+                        <div style="color: ${descColor}; font-size: 12px; margin-top: 2px;">
+                            ${cmd.desc}
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+
+            suggestions.style.display = 'block';
+            suggestions.style.pointerEvents = 'auto';
+            selectedCommandIndex = -1;
+        }
+
+        function hideCommandSuggestions() {
+            const commandSuggestions = document.getElementById('commandSuggestions');
+            if (commandSuggestions) {
+                commandSuggestions.style.display = 'none';
+                commandSuggestions.style.pointerEvents = 'none';
+                selectedCommandIndex = -1;
+            }
+
+            // Restore original suggestions if input is focused and not a command
+            const input = document.getElementById('memoryInput');
+            const originalSuggestions = document.getElementById('inputSuggestions');
+            if (input && originalSuggestions && document.activeElement === input && !input.value.startsWith('/')) {
+                originalSuggestions.style.display = 'block';
+            }
+        }
+
+        function navigateCommandSuggestions(direction) {
+            const suggestions = document.getElementById('commandSuggestions');
+            const items = suggestions.querySelectorAll('.command-suggestion');
+
+            // Remove previous selection
+            if (selectedCommandIndex >= 0) {
+                items[selectedCommandIndex].style.background = 'transparent';
+            }
+
+            // Update selection
+            selectedCommandIndex += direction;
+            if (selectedCommandIndex < 0) selectedCommandIndex = items.length - 1;
+            if (selectedCommandIndex >= items.length) selectedCommandIndex = 0;
+
+            // Highlight new selection
+            items[selectedCommandIndex].style.background = 'rgba(99, 102, 241, 0.2)';
+            items[selectedCommandIndex].scrollIntoView({ block: 'nearest' });
+
+            // Update input with selected command
+            const input = document.getElementById('memoryInput');
+            const selectedCmd = availableCommands[parseInt(items[selectedCommandIndex].dataset.index)];
+            input.value = selectedCmd.cmd + (selectedCmd.args ? ' ' : '');
+
+            // Position cursor at end
+            setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
+        }
+
+        function selectCommand(cmd, args) {
+            const input = document.getElementById('memoryInput');
+            input.value = cmd + (args ? ' ' : '');
+            input.focus();
+
+            // Position cursor at end or after space for args
+            setTimeout(() => {
+                const cursorPos = args ? input.value.length : input.value.length;
+                input.setSelectionRange(cursorPos, cursorPos);
+            }, 0);
+
+            hideCommandSuggestions();
+        }
+
+        function handleQuery(query) {
+            console.log('Querying memory:', query);
+
+            // Show visual feedback
+            const input = document.getElementById('memoryInput');
+            const queryBtn = document.getElementById('queryBtn');
+
+            queryBtn.style.background = 'rgba(34, 211, 238, 0.3)';
+            queryBtn.style.color = '#22d3ee';
+
+            // Simulate search results (in real implementation, this would call the backend)
+            setTimeout(() => {
+                // Reset button style
+                queryBtn.style.background = '';
+                queryBtn.style.color = '';
+
+                // Show mock results
+                showQueryResults(query);
+                input.value = '';
+            }, 800);
+        }
+
+        function handleAddMemory(content) {
+            console.log('Adding memory:', content);
+
+            // Show visual feedback
+            const input = document.getElementById('memoryInput');
+            const addBtn = document.getElementById('addBtn');
+
+            addBtn.style.background = 'rgba(34, 197, 94, 0.3)';
+            addBtn.style.color = '#22c55e';
+
+            // Simulate adding memory (in real implementation, this would call the backend)
+            setTimeout(() => {
+                // Reset button style
+                addBtn.style.background = '';
+                addBtn.style.color = '';
+
+                // Show success feedback
+                showAddSuccess(content);
+                input.value = '';
+            }, 800);
+        }
+
+        function showQueryResults(query) {
+            // Mock search results display
+            const detailsPanel = document.getElementById('memoryDetails');
+            const detailsPath = document.getElementById('detailsPath');
+            const memoriesList = document.getElementById('memoriesList');
+
+            detailsPath.textContent = `Search Results: "${query}"`;
+            memoriesList.innerHTML = `
+                <div class="memory-item">
+                    <div class="memory-content">Found: Python programming skills - expert level</div>
+                    <div class="memory-meta">
+                        <span class="confidence-score">0.95</span>
+                        <span>profile.professional.skills.python</span>
+                    </div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-content">Found: JavaScript development experience - 3+ years</div>
+                    <div class="memory-meta">
+                        <span class="confidence-score">0.88</span>
+                        <span>profile.professional.experience.javascript</span>
+                    </div>
+                </div>
+            `;
+
+            detailsPanel.classList.add('open');
+        }
+
+        function showAddSuccess(content) {
+            // Mock success notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(34, 197, 94, 0.9);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 10000;
+                backdrop-filter: blur(10px);
+            `;
+            notification.textContent = `✅ Memory added: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Initialize the memory input functionality
+        initializeMemoryInput();
+    </script>
+</body>
+</html>
