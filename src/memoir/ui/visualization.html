@@ -1978,20 +1978,296 @@
             // Update branches dropdown to original state
             updateBranchesDropdown(['main', 'feature/context-memory', 'feature/ui-improvements', 'experimental/ml-optimization'], 'main');
 
-            // Update commits to original state
-            updateCommitTimeline([
-                {"hash": "d75e832", "message": "Implement simple server to visualize memory structure and history"},
-                {"hash": "e569282", "message": "Add Memoir UI"},
-                {"hash": "b44a526", "message": "fix html lines"},
-                {"hash": "a4f7f14", "message": "feat: Add LangGraph integration package with comprehensive examples and documentation"},
-                {"hash": "35be3ae", "message": "feat: implement Git-like version control and time travel for AI memory"},
-                {"hash": "2c1e5f7", "message": "Enhanced memory classification system"},
-                {"hash": "8c4a6f3", "message": "Add preference tracking and user context"},
-                {"hash": "00c5625", "message": "Initial memory system implementation"}
-            ]);
+            // Restore original git history
+            restoreOriginalGitHistory();
 
             // Update graph view to original state
             updateGraphView();
+        }
+
+        function restoreOriginalGitHistory() {
+            const gitHistory = document.querySelector('.git-tree');
+            if (!gitHistory) return;
+
+            // Restore the complete original git history HTML
+            const originalGitHTML = `
+                <!-- Week 1 - Recent commits -->
+                <div class="commit-node active" data-commit="f9a8b12">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.3.1</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">f9a8b12</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">fix: Resolve memory leak in taxonomy caching</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="d75e832">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">d75e832</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add intelligent memory classification</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">4h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="e2c4f89">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve feature"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">e2c4f89</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/batch-processing'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">8h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="b3a7c91">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">b3a7c91</div><div class="branch-tag">feature/batch-processing</div></div>
+                        <div class="commit-message">perf: Implement batch memory operations</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">12h ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="c3f7921">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve feature"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">c3f7921</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Optimize search engine performance</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="a9e5d21">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">a9e5d21</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add memory confidence scoring</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="b92f381">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.3.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">b92f381</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Modern glassmorphism UI design</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2d ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Week 2 - Previous week -->
+                <div class="commit-node" data-commit="7f2a8b3">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve feature"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">7f2a8b3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/async-processing'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">3d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="6e1b4c7">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">6e1b4c7</div><div class="branch-tag">feature/async-processing</div></div>
+                        <div class="commit-message">feat: Add async memory operations</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">4d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="a4f7f14">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve feature"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">a4f7f14</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Improve memory store performance</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">4d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="3d9c2e8">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">3d9c2e8</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">docs: Update API documentation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">5d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8e1c492">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.2.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8e1c492</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Git-like versioning for AI memory</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">6d ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="5a8f3b1">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">5a8f3b1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">fix: Handle edge cases in memory retrieval</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Week 3-4 - Older commits -->
+                <div class="commit-node" data-commit="2b7e4a9">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve hotfix"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">2b7e4a9</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/search-improvements'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="9c4d1f8">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">9c4d1f8</div><div class="branch-tag">feature/search-improvements</div></div>
+                        <div class="commit-message">feat: Enhanced semantic search capabilities</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="f3e8a72">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve release"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">f3e8a72</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">test: Add comprehensive unit tests</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="35be3ae">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.1.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">35be3ae</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add comprehensive API documentation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="1a5c9d4">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">1a5c9d4</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Clean up legacy code paths</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8b2f6e3">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8b2f6e3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Implement memory compression</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">2w ago</div></div>
+                    </div>
+                </div>
+
+                <!-- Month 2 - Earlier development -->
+                <div class="commit-node" data-commit="4d7a3c1">
+                    <div class="git-lines"><div class="commit-dot merge"></div><div class="git-line merge-curve release"></div><div class="git-line branch-vertical merge-down"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">4d7a3c1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">Merge branch 'feature/taxonomy-system'</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="6f8e2b9">
+                    <div class="git-lines"><div class="commit-dot branch"></div><div class="git-line branch-vertical branch-commit"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">6f8e2b9</div><div class="branch-tag">feature/taxonomy-system</div></div>
+                        <div class="commit-message">feat: Dynamic taxonomy expansion</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="9e4b7a2">
+                    <div class="git-lines"><div class="commit-dot main"></div><div class="git-line branch-curve develop"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">9e4b7a2</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Core taxonomy implementation</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">3w ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="2c1e5f7">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v2.0.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">2c1e5f7</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Major architecture overhaul</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="7a3d8c4">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">7a3d8c4</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">refactor: Modularize classifier system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="5b9f2e1">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">5b9f2e1</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Add memory indexing system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">AS</div><span>Alice Smith</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="8c4a6f3">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v1.5.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">8c4a6f3</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Implement prolly tree storage</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">MB</div><span>Mike Brown</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="3f7b1a8">
+                    <div class="git-lines"><div class="commit-dot main"></div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">3f7b1a8</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">docs: Add getting started guide</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">1mo ago</div></div>
+                    </div>
+                </div>
+
+                <div class="commit-node" data-commit="00c5625">
+                    <div class="git-lines"><div class="commit-dot tag"></div><div class="git-tag">v1.0.0</div></div>
+                    <div class="commit-info">
+                        <div class="commit-header"><div class="commit-hash">00c5625</div><div class="branch-tag">main</div></div>
+                        <div class="commit-message">feat: Initial release - Core memory system</div>
+                        <div class="commit-meta"><div class="commit-author"><div class="author-avatar">JD</div><span>John Doe</span></div><div class="commit-time">2mo ago</div></div>
+                    </div>
+                </div>
+            `;
+
+            gitHistory.innerHTML = originalGitHTML;
+        }
+
+        function updateBranchesDropdown(branches, currentBranch) {
+            const branchSelector = document.getElementById('branchSelector');
+            if (!branchSelector) return;
+
+            // Clear existing options
+            branchSelector.innerHTML = '';
+
+            // Add branch options
+            branches.forEach(branch => {
+                const option = document.createElement('option');
+                option.value = branch;
+                option.textContent = branch;
+                if (branch === currentBranch) {
+                    option.selected = true;
+                }
+                branchSelector.appendChild(option);
+            });
         }
 
         function restoreOriginalTreeView() {
@@ -2019,35 +2295,35 @@
                             <div class="node-children">
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">identity</span>
                                         <span class="memory-count">8</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">location</span>
                                         <span class="memory-count">6</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">relationships</span>
                                         <span class="memory-count">5</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">health</span>
                                         <span class="memory-count">4</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">goals</span>
                                         <span class="memory-count">3</span>
                                     </div>
@@ -2062,35 +2338,35 @@
                             <div class="node-children">
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">skills</span>
                                         <span class="memory-count">12</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">experience</span>
                                         <span class="memory-count">9</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">companies</span>
                                         <span class="memory-count">4</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">education</span>
                                         <span class="memory-count">3</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">achievements</span>
                                         <span class="memory-count">6</span>
                                     </div>
@@ -2105,28 +2381,28 @@
                             <div class="node-children">
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">interface</span>
                                         <span class="memory-count">5</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">notifications</span>
                                         <span class="memory-count">3</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">privacy</span>
                                         <span class="memory-count">4</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">workflow</span>
                                         <span class="memory-count">2</span>
                                     </div>
@@ -2141,35 +2417,35 @@
                             <div class="node-children">
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">music</span>
                                         <span class="memory-count">4</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">books</span>
                                         <span class="memory-count">7</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">movies</span>
                                         <span class="memory-count">3</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">sports</span>
                                         <span class="memory-count">2</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">hobbies</span>
                                         <span class="memory-count">5</span>
                                     </div>
@@ -2184,21 +2460,21 @@
                             <div class="node-children">
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">devices</span>
                                         <span class="memory-count">3</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">tools</span>
                                         <span class="memory-count">8</span>
                                     </div>
                                 </div>
                                 <div class="tree-node">
                                     <div class="node-content">
-                                        <span class="node-icon">📁</span>
+                                        <span class="node-icon">📄</span>
                                         <span class="node-label has-memories">platforms</span>
                                         <span class="memory-count">6</span>
                                     </div>
@@ -3295,9 +3571,10 @@ ${result.valid ?
 
             // Convert to HTML
             function renderNode(name, node, level = 0) {
-                const icon = getIconForPath(name, level);
                 const hasMemories = node.count > 0;
                 const hasChildren = Object.keys(node.children).length > 0;
+                const isLeafNode = hasMemories && !hasChildren;
+                const icon = getIconForPath(name, level, isLeafNode);
                 const foldIcon = hasChildren ? '▼' : '';
 
                 let html = `
@@ -3363,8 +3640,13 @@ ${result.valid ?
             }
         }
 
-        function getIconForPath(name, level) {
-            // Icons based on common path patterns - all using folder emoji
+        function getIconForPath(name, level, isLeafNode = false) {
+            // If it's a leaf node (has memories but no children), use document icon
+            if (isLeafNode) {
+                return '📄';
+            }
+
+            // Otherwise use folder icons for directories
             const icons = {
                 'profile': '📁',
                 'personal': '📁',
