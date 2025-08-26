@@ -992,7 +992,7 @@
         .input-actions {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
             position: absolute;
             right: 16px;
             top: 50%;
@@ -1024,10 +1024,108 @@
             color: #22d3ee;
         }
 
-        .add-btn:hover {
-            background: rgba(34, 197, 94, 0.2);
-            color: #22c55e;
+        .model-btn {
+            width: auto;
+            min-width: auto;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
         }
+
+        .model-btn:hover {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+        }
+
+        .model-name-display {
+            font-size: 13px;
+            font-weight: 500;
+            color: inherit;
+        }
+
+        .model-dropdown {
+            position: absolute;
+            top: -10px;
+            right: 0;
+            transform: translateY(-100%);
+            background: rgba(30, 41, 59, 0.95);
+            border: 1px solid rgba(51, 65, 85, 0.8);
+            border-radius: 12px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            min-width: 250px;
+            z-index: 1000;
+            display: none;
+        }
+
+        .model-dropdown-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+            font-size: 14px;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+
+        .model-option {
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+            transition: all 0.2s ease;
+        }
+
+        .model-option:last-child {
+            border-bottom: none;
+            border-radius: 0 0 12px 12px;
+        }
+
+        .model-option:hover {
+            background: rgba(51, 65, 85, 0.3);
+            color: #f8fafc;
+        }
+
+        .model-option.selected {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+        }
+
+        .model-option .model-name {
+            font-weight: 500;
+        }
+
+        .model-option .model-provider {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .model-option .model-check {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .model-option.selected .model-check {
+            opacity: 1;
+        }
+
+        .model-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .model-option.disabled .model-name {
+            color: #6b7280;
+        }
+
+        .model-option.disabled .model-provider {
+            color: #6b7280;
+        }
+
 
         .input-suggestions {
             position: absolute;
@@ -1606,7 +1704,7 @@
             <input
                 type="text"
                 id="memoryInput"
-                placeholder="Ask a question, add memory, or use /commands (try /connect /tmp/memoir_ui_store)"
+                placeholder="Ask a question or use /commands"
                 autocomplete="off"
             />
             <div class="input-actions">
@@ -1615,17 +1713,62 @@
                         <path d="M15.5 14h-.79l-.28-.27c.98-1.13 1.57-2.61 1.57-4.23 0-3.59-2.91-6.5-6.5-6.5S3 5.91 3 9.5s2.91 6.5 6.5 6.5c1.62 0 3.1-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
                     </svg>
                 </button>
-                <button class="input-btn add-btn" id="addBtn" title="Add Memory">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                <button class="input-btn model-btn" id="modelBtn" title="Select LLM Model">
+                    <span class="model-name-display" id="modelNameDisplay">GPT-4o Mini</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 4px;">
+                        <path d="M7 10l5 5 5-5z"/>
                     </svg>
                 </button>
             </div>
         </div>
         <div class="input-suggestions" id="inputSuggestions" style="display: none;">
             <div class="suggestion-item">Search for "Python skills"</div>
-            <div class="suggestion-item">Add "I prefer dark theme"</div>
             <div class="suggestion-item">Query "What are my interests?"</div>
+        </div>
+        <div class="model-dropdown" id="modelDropdown">
+            <div class="model-dropdown-header">Select LLM Model</div>
+            <div class="model-option selected" data-model="gpt-4o-mini" data-available="true">
+                <div>
+                    <div class="model-name">GPT-4o Mini</div>
+                    <div class="model-provider">OpenAI</div>
+                </div>
+                <div class="model-check">✓</div>
+            </div>
+            <div class="model-option disabled" data-model="gpt-4" data-available="false">
+                <div>
+                    <div class="model-name">GPT-4</div>
+                    <div class="model-provider">OpenAI • Coming Soon</div>
+                </div>
+                <div class="model-check">⏳</div>
+            </div>
+            <div class="model-option disabled" data-model="gpt-3.5-turbo" data-available="false">
+                <div>
+                    <div class="model-name">GPT-3.5 Turbo</div>
+                    <div class="model-provider">OpenAI • Coming Soon</div>
+                </div>
+                <div class="model-check">⏳</div>
+            </div>
+            <div class="model-option disabled" data-model="claude-3-opus" data-available="false">
+                <div>
+                    <div class="model-name">Claude 3 Opus</div>
+                    <div class="model-provider">Anthropic • Coming Soon</div>
+                </div>
+                <div class="model-check">⏳</div>
+            </div>
+            <div class="model-option disabled" data-model="claude-3-sonnet" data-available="false">
+                <div>
+                    <div class="model-name">Claude 3 Sonnet</div>
+                    <div class="model-provider">Anthropic • Coming Soon</div>
+                </div>
+                <div class="model-check">⏳</div>
+            </div>
+            <div class="model-option disabled" data-model="gemini-pro" data-available="false">
+                <div>
+                    <div class="model-name">Gemini Pro</div>
+                    <div class="model-provider">Google • Coming Soon</div>
+                </div>
+                <div class="model-check">⏳</div>
+            </div>
         </div>
     </div>
 
@@ -1633,6 +1776,11 @@
         // Store connection state
         let connectedStorePath = null;
         let storeData = null;
+
+        // Command history
+        let commandHistory = [];
+        let historyIndex = -1;
+        let currentInput = '';
 
         // Mock data and interactions with 30 commits
         const commits = {
@@ -2956,7 +3104,7 @@ ${result.valid ?
             notification.className = 'notification';
             notification.style.cssText = `
                 position: fixed;
-                top: 20px;
+                top: 100px;
                 right: 20px;
                 padding: 12px 20px;
                 background: ${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6'};
@@ -3936,24 +4084,13 @@ ${result.valid ?
             { cmd: '/proof', args: '<memory-path>', desc: 'Generate cryptographic proof for a memory' },
             { cmd: '/verify', args: '[proof] [key]', desc: 'Verify last proof or provide proof data' },
             { cmd: '/help', args: '', desc: 'Show all available commands', aliases: '/h' },
-            { cmd: '/share', args: '<path>', desc: 'Share memory or branch (coming soon)', placeholder: true },
             { cmd: '/summarize', args: '[path]', desc: 'Generate summary of memories (coming soon)', placeholder: true },
             { cmd: '/time-travel', args: '<commit>', desc: 'View memories at specific commit (coming soon)', placeholder: true },
             { cmd: '/blame', args: '<path>', desc: 'Show history of memory changes (coming soon)', placeholder: true },
             { cmd: '/timeline', args: '[filter]', desc: 'Show chronological memory timeline (coming soon)', placeholder: true },
             { cmd: '/location', args: '<place>', desc: 'Filter memories by location context (coming soon)', placeholder: true },
             { cmd: '/what-if', args: '<scenario>', desc: 'Simulate hypothetical memory scenarios (coming soon)', placeholder: true },
-            { cmd: '/never-mind', args: '', desc: 'Undo last operation or clear current context (coming soon)', placeholder: true },
-            { cmd: '/merge', args: '<branch>', desc: 'Merge memory branch into current branch (coming soon)', placeholder: true },
-            { cmd: '/what-happened', args: '[timeframe]', desc: 'Show recent memory changes and activity (coming soon)', placeholder: true },
-            { cmd: '/organize', args: '[pattern]', desc: 'Auto-organize and restructure memories (coming soon)', placeholder: true },
-            { cmd: '/sign-in', args: '[provider]', desc: 'Sign in to sync memories across devices (coming soon)', placeholder: true },
-            { cmd: '/sign-out', args: '', desc: 'Sign out and clear session data (coming soon)', placeholder: true },
-            { cmd: '/upgrade', args: '', desc: 'Upgrade to premium features (coming soon)', placeholder: true },
-            { cmd: '/portal', args: '[destination]', desc: 'Open web portal or external integrations (coming soon)', placeholder: true },
-            { cmd: '/test', args: '[suite]', desc: 'Run memory system tests and diagnostics (coming soon)', placeholder: true },
-            { cmd: '/prompt', args: '<template>', desc: 'Create and manage AI prompt templates (coming soon)', placeholder: true },
-            { cmd: '/encrypt', args: '[method]', desc: 'Encrypt memory data with security options (coming soon)', placeholder: true }
+            { cmd: '/merge', args: '<branch>', desc: 'Merge memory branch into current branch (coming soon)', placeholder: true }
         ];
 
         let selectedCommandIndex = -1;
@@ -3962,8 +4099,13 @@ ${result.valid ?
         function initializeMemoryInput() {
             const input = document.getElementById('memoryInput');
             const queryBtn = document.getElementById('queryBtn');
-            const addBtn = document.getElementById('addBtn');
+            const modelBtn = document.getElementById('modelBtn');
+            const modelNameDisplay = document.getElementById('modelNameDisplay');
             const suggestions = document.getElementById('inputSuggestions');
+            const modelDropdown = document.getElementById('modelDropdown');
+
+            // Load command history from localStorage
+            loadHistoryFromStorage();
 
             // Create command suggestions element
             createCommandSuggestionsElement();
@@ -4029,20 +4171,24 @@ ${result.valid ?
 
                     const value = input.value.trim();
                     if (value) {
+                        // Add to history before processing
+                        addToHistory(value);
+
+                        // Clear input immediately
+                        input.value = '';
+                        resetHistoryIndex(); // Reset history navigation
+
                         // Check if it's a command
                         if (value.startsWith('/')) {
                             console.log('Processing command:', value);
-                            await handleCommand(value);
-                            input.value = ''; // Clear input after command
                             hideCommandSuggestions();
+                            await handleCommand(value);
                         } else {
                             // Default action: query if it's a question, add if it's a statement
                             if (value.includes('?') || value.toLowerCase().startsWith('what') ||
                                 value.toLowerCase().startsWith('how') || value.toLowerCase().startsWith('when') ||
                                 value.toLowerCase().startsWith('where') || value.toLowerCase().startsWith('why')) {
                                 handleQuery(value);
-                            } else {
-                                handleAddMemory(value);
                             }
                         }
                     }
@@ -4051,14 +4197,22 @@ ${result.valid ?
                 } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     const suggestions = document.getElementById('commandSuggestions');
                     if (suggestions && suggestions.style.display === 'block') {
+                        // Navigate command suggestions
                         e.preventDefault();
                         navigateCommandSuggestions(e.key === 'ArrowDown' ? 1 : -1);
+                    } else {
+                        // Navigate command history
+                        e.preventDefault();
+                        navigateHistory(e.key === 'ArrowUp' ? 'up' : 'down');
                     }
                 }
             });
 
             // Handle input changes for command suggestions
             input.addEventListener('input', (e) => {
+                // Reset history navigation when user types
+                resetHistoryIndex();
+
                 const value = e.target.value;
                 if (value.startsWith('/')) {
                     showCommandSuggestions(value);
@@ -4082,11 +4236,66 @@ ${result.valid ?
                 }
             });
 
-            // Add button functionality
-            addBtn.addEventListener('click', () => {
-                const value = input.value.trim();
-                if (value) {
-                    handleAddMemory(value);
+            // Model button functionality
+            modelBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isVisible = modelDropdown.style.display === 'block';
+                modelDropdown.style.display = isVisible ? 'none' : 'block';
+
+                if (!isVisible) {
+                    // Hide other dropdowns/suggestions
+                    suggestions.style.display = 'none';
+                    hideCommandSuggestions();
+                }
+            });
+
+            // Model selection
+            const modelOptions = document.querySelectorAll('.model-option');
+            modelOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    // Check if model is available
+                    const isAvailable = option.dataset.available === 'true';
+
+                    if (!isAvailable) {
+                        // Show notification for disabled models
+                        const modelName = option.querySelector('.model-name').textContent;
+                        showNotification(`${modelName} is coming soon! Currently only GPT-4o Mini is supported.`, 'info', 4000);
+                        return;
+                    }
+
+                    // Remove selected class from all available options
+                    modelOptions.forEach(opt => {
+                        if (opt.dataset.available === 'true') {
+                            opt.classList.remove('selected');
+                        }
+                    });
+
+                    // Add selected class to clicked option
+                    option.classList.add('selected');
+
+                    // Get selected model
+                    const selectedModel = option.dataset.model;
+                    const modelName = option.querySelector('.model-name').textContent;
+
+                    // Update button text and title
+                    modelNameDisplay.textContent = modelName;
+                    modelBtn.title = `LLM Model: ${modelName}`;
+
+                    // Hide dropdown
+                    modelDropdown.style.display = 'none';
+
+                    // Store selected model (could be used by backend)
+                    localStorage.setItem('selectedLLMModel', selectedModel);
+
+                    // Show notification
+                    showNotification(`LLM Model changed to: ${modelName}`, 'success', 3000);
+                });
+            });
+
+            // Hide model dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!modelDropdown.contains(e.target) && e.target !== modelBtn) {
+                    modelDropdown.style.display = 'none';
                 }
             });
 
@@ -4099,13 +4308,98 @@ ${result.valid ?
                         const query = text.match(/"([^"]+)"/)?.[1] || text.split(' ').slice(-2).join(' ');
                         input.value = query;
                         handleQuery(query);
-                    } else if (text.includes('Add')) {
-                        const memory = text.match(/"([^"]+)"/)?.[1] || text.split(' ').slice(-3).join(' ');
-                        input.value = memory;
-                        handleAddMemory(memory);
                     }
                 });
             });
+
+            // Initialize selected model from localStorage
+            const savedModel = localStorage.getItem('selectedLLMModel');
+            if (savedModel) {
+                const savedOption = document.querySelector(`[data-model="${savedModel}"]`);
+                if (savedOption && savedOption.dataset.available === 'true') {
+                    // Remove selected class from all available options
+                    modelOptions.forEach(opt => {
+                        if (opt.dataset.available === 'true') {
+                            opt.classList.remove('selected');
+                        }
+                    });
+
+                    // Add selected class to saved option
+                    savedOption.classList.add('selected');
+
+                    // Update button text and title
+                    const modelName = savedOption.querySelector('.model-name').textContent;
+                    modelNameDisplay.textContent = modelName;
+                    modelBtn.title = `LLM Model: ${modelName}`;
+                }
+            } else {
+                // Default to GPT-4o Mini if no saved selection
+                const defaultModel = document.querySelector('[data-model="gpt-4o-mini"]');
+                if (defaultModel) {
+                    const modelName = defaultModel.querySelector('.model-name').textContent;
+                    modelNameDisplay.textContent = modelName;
+                    modelBtn.title = `LLM Model: ${modelName}`;
+                }
+            }
+        }
+
+        // Command History Functions
+        function addToHistory(command) {
+            if (command.trim() && command !== commandHistory[commandHistory.length - 1]) {
+                commandHistory.push(command);
+                // Limit history to 50 entries
+                if (commandHistory.length > 50) {
+                    commandHistory.shift();
+                }
+                // Save to localStorage
+                localStorage.setItem('memoryInputHistory', JSON.stringify(commandHistory));
+            }
+            resetHistoryIndex();
+        }
+
+        function resetHistoryIndex() {
+            historyIndex = -1;
+            currentInput = '';
+        }
+
+        function navigateHistory(direction) {
+            const input = document.getElementById('memoryInput');
+
+            if (commandHistory.length === 0) return;
+
+            // Store current input when starting navigation
+            if (historyIndex === -1) {
+                currentInput = input.value;
+            }
+
+            if (direction === 'up') {
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    const historyItem = commandHistory[commandHistory.length - 1 - historyIndex];
+                    input.value = historyItem;
+                }
+            } else if (direction === 'down') {
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    const historyItem = commandHistory[commandHistory.length - 1 - historyIndex];
+                    input.value = historyItem;
+                } else if (historyIndex === 0) {
+                    historyIndex = -1;
+                    input.value = currentInput;
+                }
+            }
+        }
+
+        function loadHistoryFromStorage() {
+            try {
+                const saved = localStorage.getItem('memoryInputHistory');
+                if (saved) {
+                    commandHistory = JSON.parse(saved);
+                }
+            } catch (e) {
+                console.warn('Failed to load command history from storage:', e);
+                commandHistory = [];
+            }
         }
 
         function createCommandSuggestionsElement() {
@@ -4266,27 +4560,6 @@ ${result.valid ?
             }, 800);
         }
 
-        function handleAddMemory(content) {
-            console.log('Adding memory:', content);
-
-            // Show visual feedback
-            const input = document.getElementById('memoryInput');
-            const addBtn = document.getElementById('addBtn');
-
-            addBtn.style.background = 'rgba(34, 197, 94, 0.3)';
-            addBtn.style.color = '#22c55e';
-
-            // Simulate adding memory (in real implementation, this would call the backend)
-            setTimeout(() => {
-                // Reset button style
-                addBtn.style.background = '';
-                addBtn.style.color = '';
-
-                // Show success feedback
-                showAddSuccess(content);
-                input.value = '';
-            }, 800);
-        }
 
         function showQueryResults(query) {
             // Mock search results display
@@ -4315,30 +4588,6 @@ ${result.valid ?
             detailsPanel.classList.add('open');
         }
 
-        function showAddSuccess(content) {
-            // Mock success notification
-            const notification = document.createElement('div');
-            notification.style.cssText = `
-                position: fixed;
-                bottom: 100px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: rgba(34, 197, 94, 0.9);
-                color: white;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-size: 14px;
-                z-index: 10000;
-                backdrop-filter: blur(10px);
-            `;
-            notification.textContent = `✅ Memory added: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`;
-
-            document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.remove();
-            }, 3000);
-        }
 
         // Initialize the page
         function initializePage() {
