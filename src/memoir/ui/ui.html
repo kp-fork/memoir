@@ -1025,15 +1025,6 @@
                 } else {
                     await handleInspectCommand(path);
                 }
-            } else if (cmd === '/test-scenario') {
-                const scenarioName = parts.slice(1).join(' ');
-                if (!scenarioName) {
-                    showNotification('Usage: /test-scenario <name>\nExample: /test-scenario user-onboarding', 'error');
-                } else {
-                    await handleTestScenarioCommand(scenarioName);
-                }
-            } else if (cmd === '/mock-data') {
-                await handleMockDataCommand();
             } else if (cmd === '/benchmark') {
                 await handleBenchmarkCommand();
             } else if (cmd === '/export') {
@@ -1046,14 +1037,33 @@
                     const [, path1, path2] = parts;
                     await handleCompareStoresCommand(path1, path2);
                 }
-            } else if (cmd === '/trace') {
-                await handleTraceCommand();
             } else if (cmd === '/replay') {
                 const sessionId = parts.slice(1).join(' ');
                 if (!sessionId) {
                     showNotification('Usage: /replay <session>\nExample: /replay session-123', 'error');
                 } else {
                     await handleReplayCommand(sessionId);
+                }
+            } else if (cmd === '/import') {
+                const filePath = parts.slice(1).join(' ');
+                if (!filePath) {
+                    showNotification('Usage: /import <file_path>\nExample: /import /path/to/conversation.json\nSupported formats: JSON, TXT', 'error');
+                } else {
+                    showNotification(`Importing conversations from "${filePath}" coming soon. This will ingest and process conversation history into the memory store.`, 'info');
+                }
+            } else if (cmd === '/eval') {
+                const input = parts.slice(1).join(' ');
+                if (!input) {
+                    showNotification('Usage: /eval <question_or_file>\nExample: /eval "What is the user\'s favorite color?"\nExample: /eval /path/to/questions.txt', 'error');
+                } else {
+                    showNotification(`Evaluating recall for "${input}" coming soon. This will test memory recall hit rate and answer quality.`, 'info');
+                }
+            } else if (cmd === '/organize') {
+                const path = parts.slice(1).join(' ');
+                if (!path) {
+                    showNotification('Usage: /organize <path>\nExample: /organize profile.career', 'error');
+                } else {
+                    showNotification(`Organizing memories under "${path}" coming soon. This will restructure and optimize the taxonomy for better organization.`, 'info');
                 }
             } else if (cmd === '/template') {
                 const templateType = parts.slice(1).join(' ');
@@ -7564,6 +7574,7 @@ ${result.valid ?
         const availableCommands = [
             { cmd: '/connect', args: '<path>', desc: 'Connect to memory store at path', aliases: '/con, /conn' },
             { cmd: '/new', args: '<path>', desc: 'Create new memory store at path (e.g., /tmp/my_store)', aliases: '/create' },
+            { cmd: '/import', args: '<file_path>', desc: 'Import conversations from JSON or TXT files', placeholder: true },
             { cmd: '/remember', args: '<content>', desc: 'Store and classify new memory', aliases: '/rem' },
             { cmd: '/forget', args: '<key>', desc: 'Delete memory by key', aliases: '/del' },
             { cmd: '/refresh', args: '', desc: 'Refresh current connection', aliases: '/ref' },
@@ -7586,14 +7597,13 @@ ${result.valid ?
             { cmd: '/location', args: '[place description]', desc: 'Show places or add location event', aliases: '/loc' },
 
             // Developer & Debugging Commands (Coming Soon)
+            { cmd: '/eval', args: '<question_or_file>', desc: 'Evaluate recall hit rate and answer quality', placeholder: true },
+            { cmd: '/organize', args: '<path>', desc: 'Reorganize and optimize memory taxonomy for a subset of keys', placeholder: true },
             { cmd: '/inspect', args: '<path>', desc: 'Deep dive into a specific memory path with full history', placeholder: true },
             { cmd: '/diff', args: '[commit1] [commit2]', desc: 'Compare memory store between commits or show recent changes', aliases: '/d' },
-            { cmd: '/test-scenario', args: '<name>', desc: 'Run predefined test scenarios against memory store', placeholder: true },
-            { cmd: '/mock-data', args: '', desc: 'Generate realistic test data for development', placeholder: true },
             { cmd: '/benchmark', args: '', desc: 'Performance benchmarks for search, retrieval, classification', placeholder: true },
             { cmd: '/export', args: '<format>', desc: 'Export memories to JSON/CSV for external analysis', placeholder: true },
             { cmd: '/compare-stores', args: '<path1> <path2>', desc: 'Compare two memory stores', placeholder: true },
-            { cmd: '/trace', args: '', desc: 'Enable memory access tracing for debugging agent behavior', placeholder: true },
             { cmd: '/replay', args: '<session>', desc: 'Replay agent interactions with memory', placeholder: true },
             { cmd: '/template', args: '<type>', desc: 'Generate prompt templates for common integration patterns', placeholder: true }
         ];
@@ -10202,10 +10212,10 @@ Message: ${commit.message}`;
         }
 
         function generateHelpContent() {
-            const coreCommands = availableCommands.filter(c => ['connect', 'new', 'remember', 'forget', 'refresh'].some(cmd => c.cmd.includes(cmd)));
+            const coreCommands = availableCommands.filter(c => ['connect', 'new', 'import', 'remember', 'forget', 'refresh'].some(cmd => c.cmd.includes(cmd)));
             const gitCommands = availableCommands.filter(c => ['branch', 'checkout', 'merge', 'time-travel', 'commits', 'blame'].some(cmd => c.cmd.includes(cmd)));
             const viewCommands = availableCommands.filter(c => ['timeline', 'location', 'summarize', 'recall', 'proof', 'verify'].some(cmd => c.cmd.includes(cmd)));
-            const devCommands = availableCommands.filter(c => ['inspect', 'diff', 'test-scenario', 'mock-data', 'benchmark', 'export', 'compare-stores', 'trace', 'replay', 'template'].some(cmd => c.cmd.includes(cmd)));
+            const devCommands = availableCommands.filter(c => ['eval', 'organize', 'inspect', 'diff', 'benchmark', 'export', 'compare-stores', 'replay', 'template'].some(cmd => c.cmd.includes(cmd)));
 
             return `
                 <div class="help-api-docs">
@@ -10224,8 +10234,11 @@ Message: ${commit.message}`;
                     <h3>🔗 Core Operations</h3>
                     <div class="help-command-grid">
                         ${coreCommands.map(cmd => `
-                            <div class="help-command-item">
-                                <div class="help-command-syntax">${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}</div>
+                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
+                                <div class="help-command-syntax">
+                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
+                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
+                                </div>
                                 <div class="help-command-desc">${cmd.desc}</div>
                                 ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
                             </div>
@@ -10237,8 +10250,11 @@ Message: ${commit.message}`;
                     <h3>🌿 Git-like Version Control</h3>
                     <div class="help-command-grid">
                         ${gitCommands.map(cmd => `
-                            <div class="help-command-item">
-                                <div class="help-command-syntax">${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}</div>
+                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
+                                <div class="help-command-syntax">
+                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
+                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
+                                </div>
                                 <div class="help-command-desc">${cmd.desc}</div>
                                 ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
                             </div>
@@ -10250,8 +10266,11 @@ Message: ${commit.message}`;
                     <h3>📊 Data Views & Analysis</h3>
                     <div class="help-command-grid">
                         ${viewCommands.map(cmd => `
-                            <div class="help-command-item">
-                                <div class="help-command-syntax">${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}</div>
+                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
+                                <div class="help-command-syntax">
+                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
+                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
+                                </div>
                                 <div class="help-command-desc">${cmd.desc}</div>
                                 ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
                             </div>
