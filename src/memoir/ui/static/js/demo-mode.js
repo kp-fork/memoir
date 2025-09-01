@@ -72,13 +72,13 @@ function initializeDemoTimelineData() {
     // Demo timeline activities for GitHub-style contribution grid
     const demoActivityData = {};
     const now = new Date();
-    
+
     // Generate activity for the past year
     for (let i = 0; i < 365; i++) {
         const date = new Date(now);
         date.setDate(date.getDate() - i);
         const dateStr = date.toISOString().split('T')[0];
-        
+
         // Random activity level (0-4) with some days having no activity
         const activity = Math.random() < 0.7 ? Math.floor(Math.random() * 5) : 0;
         if (activity > 0) {
@@ -88,7 +88,7 @@ function initializeDemoTimelineData() {
             };
         }
     }
-    
+
     return demoActivityData;
 }
 

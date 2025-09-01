@@ -272,7 +272,7 @@ src/memoir/ui/
     └── js/                     # Modular JavaScript Architecture
         ├── core-ui.js          # Core UI functionality (9,440 lines)
         ├── demo-mode.js        # Demo/mock interactions (105 lines)
-        ├── dom-events.js       # DOM event handlers (97 lines)  
+        ├── dom-events.js       # DOM event handlers (97 lines)
         ├── notifications.js    # Notification system (87 lines)
         ├── mock-data.js        # Data generation (71 lines)
         ├── view-switcher.js    # View switching logic (43 lines)
