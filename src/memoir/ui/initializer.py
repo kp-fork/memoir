@@ -20,7 +20,7 @@ from memoir import ProllyTreeMemoryStoreManager
 from memoir.classifier.intelligent import IntelligentClassifier
 from memoir.search.intelligent import IntelligentSearchEngine
 from memoir.store.prolly_adapter import ProllyTreeStore
-from memoir.taxonomy.taxonomy_presets import TaxonomyVersion
+from memoir.taxonomy.taxonomy import TaxonomyVersion
 
 
 async def main():
@@ -128,16 +128,16 @@ async def main():
         )()
     else:
         try:
-            from langchain_openai import ChatOpenAI
+            from memoir.llm import get_llm
 
-            llm = ChatOpenAI(
+            llm = get_llm(
                 model="gpt-4o-mini",
                 temperature=0,
                 max_tokens=500,
             )
-            print("✓ Using OpenAI GPT-4o-mini for intelligent classification")
+            print("✓ Using LiteLLM with gpt-4o-mini for intelligent classification")
         except ImportError:
-            print("⚠️  langchain-openai not installed. Using mock LLM.")
+            print("⚠️  litellm not installed. Using mock LLM.")
             from unittest.mock import MagicMock
 
             llm = MagicMock()

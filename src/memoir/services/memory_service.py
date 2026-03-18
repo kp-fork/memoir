@@ -43,16 +43,16 @@ class MemoryService(BaseService):
     def _get_llm(self):
         """Lazily initialize and return the LLM."""
         if self._llm is None:
-            from langchain_openai import ChatOpenAI
+            from memoir.llm import get_llm
 
-            self._llm = ChatOpenAI(model=self.llm_model, temperature=0)
+            self._llm = get_llm(model=self.llm_model, temperature=0)
         return self._llm
 
     def _get_classifier(self):
         """Lazily initialize and return the classifier."""
         if self._classifier is None:
             from memoir.classifier.intelligent import IntelligentClassifier
-            from memoir.taxonomy.taxonomy_presets import TaxonomyVersion
+            from memoir.taxonomy.taxonomy import TaxonomyVersion
 
             self._classifier = IntelligentClassifier(
                 llm=self._get_llm(),

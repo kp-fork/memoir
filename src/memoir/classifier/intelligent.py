@@ -13,7 +13,7 @@ from memoir.taxonomy.iterative import (
     LLMExpansionStrategy,
     LLMIterativeTaxonomy,
 )
-from memoir.taxonomy.taxonomy_presets import TaxonomyPresets, TaxonomyVersion
+from memoir.taxonomy.taxonomy import TaxonomyPresets, TaxonomyVersion
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,7 @@ class IntelligentClassifier:
         timeline_manager: Optional[Any] = None,
         location_manager: Optional[Any] = None,
         suppress_path_warnings: bool = True,
+        enable_metadata_extraction: bool = False,
     ):
         """
         Initialize the intelligent classifier.
@@ -119,6 +120,7 @@ class IntelligentClassifier:
             min_items_for_expansion: Minimum items before expansion
             profile_manager: Optional profile manager for handling profile updates
             suppress_path_warnings: Whether to suppress warnings for invalid LLM-suggested paths
+            enable_metadata_extraction: Enable profile/timeline/location extraction (slower but richer)
         """
         self.llm = llm
         self.memory_store = memory_store
@@ -127,6 +129,7 @@ class IntelligentClassifier:
         self.location_manager = location_manager
         self.taxonomy_version = taxonomy_version
         self.suppress_path_warnings = suppress_path_warnings
+        self.enable_metadata_extraction = enable_metadata_extraction
 
         # Initialize with simplified taxonomy to reduce LLM prompt size
         simplified_presets = TaxonomyPresets()
@@ -244,88 +247,57 @@ class IntelligentClassifier:
         metadata: Optional[dict],
         conversation_context: Optional[list[str]] = None,
     ) -> str:
-        """Build prompt for LLM classification."""
+        """
+        Build prompt for LLM classification.
+
+        PROMPT STRUCTURE (optimized for prompt caching):
+        1. STATIC SECTION (cached): Taxonomy + all guidelines
+        2. DYNAMIC SECTION (not cached): User content + context
+
+        The static section is marked with [STATIC_SECTION_START] and [STATIC_SECTION_END]
+        to help with prompt caching detection.
+
+        When enable_metadata_extraction=False, uses a minimal prompt for faster inference.
+        """
+        # Use minimal prompt for fast mode (no metadata extraction)
+        if not self.enable_metadata_extraction:
+            return self._build_fast_classification_prompt(
+                content, paths, metadata, conversation_context
+            )
+
         # Get first-level categories for context
         first_level = [p for p in paths if "." not in p and p != "other"]
 
-        # Inform LLM about user's configured thresholds for better decisions
-        threshold_guidance = []
-        if self.thresholds["low"] > 0.0:
-            threshold_guidance.append(
-                f"   - IMPORTANT: User requires minimum {self.thresholds['low']:.1f} confidence to store ANY memory"
-            )
-        if self.thresholds["low"] >= 0.5:
-            threshold_guidance.append(
-                f"   - BE SELECTIVE: Only store memories you're at least {self.thresholds['low']:.1f} confident about"
-            )
-        if self.thresholds["low"] >= 0.7:
-            threshold_guidance.append(
-                "   - VERY CONSERVATIVE: User wants only high-quality, well-classified memories"
-            )
+        # Get session date for timeline calculations (needed in static section)
+        session_date = (
+            metadata.get("session_date", "unknown") if metadata else "unknown"
+        )
 
+        # =================================================================
+        # STATIC SECTION START - This part is cached across requests
+        # =================================================================
         prompt_parts = [
-            "You are a memory classification system. Analyze the following input and determine:",
+            "[STATIC_SECTION_START]",
+            "",
+            "You are a memory classification system. You will analyze user content and determine:",
             "1. Is this information worth storing as a memory?",
+            "2. If yes, which taxonomy path best fits this content?",
+            "3. What is your confidence in this classification (0.0 to 1.0)?",
+            "",
+            "Memory storage guidelines:",
             "   - Skip transient information (greetings, current time, weather forecasts)",
             "   - Skip very general conversations without specific personal details",
             "   - Store personal preferences, facts, skills, relationships, goals, experiences",
+            "",
+            "Confidence scoring guidelines:",
+            "   - 0.9-1.0: Perfect fit, exact match to taxonomy path and clear content",
+            "   - 0.7-0.8: Good fit, clearly belongs in this category",
+            "   - 0.5-0.6: Moderate fit, somewhat belongs but could fit elsewhere",
+            "   - 0.3-0.4: Poor fit, content is vague or path is not ideal",
+            "   - 0.0-0.2: Very poor fit, should probably not be stored",
+            "",
+            "Available top-level categories:",
         ]
-
-        if threshold_guidance:
-            prompt_parts.extend(threshold_guidance)
-
-        prompt_parts.extend(
-            [
-                "",
-                "2. If yes, which taxonomy path best fits this content?",
-                "3. What is your confidence in this classification (0.0 to 1.0)?",
-                f"   - User's minimum threshold: {self.thresholds['low']:.1f} (below this = not stored)",
-                f"   - Medium confidence threshold: {self.thresholds['medium']:.1f}",
-                f"   - High confidence threshold: {self.thresholds['high']:.1f}",
-                "   - Only suggest storage if you meet the user's minimum threshold",
-                "",
-                "Confidence scoring guidelines:",
-                "   - 0.9-1.0: Perfect fit, exact match to taxonomy path and clear content",
-                "   - 0.7-0.8: Good fit, clearly belongs in this category",
-                "   - 0.5-0.6: Moderate fit, somewhat belongs but could fit elsewhere",
-                "   - 0.3-0.4: Poor fit, content is vague or path is not ideal",
-                "   - 0.0-0.2: Very poor fit, should probably not be stored",
-                "",
-                f"Content to analyze (from [SELF]): {content}",
-            ]
-        )
-
-        # Always clarify that content is from [SELF] perspective
-        prompt_parts.extend(
-            [
-                "",
-                "IMPORTANT: The content above is from [SELF] - classify based on their personal perspective/experience.",
-            ]
-        )
-
-        if conversation_context:
-            prompt_parts.extend(
-                [
-                    "",
-                    "Previous conversation context (ONLY for understanding, DO NOT classify based on this):",
-                    "Speaker Attribution Guide:",
-                    "  [SELF] = The person whose memory you're classifying speaking",
-                    "  [OTHER] = Someone else speaking to them",
-                    "",
-                ]
-            )
-            for i, prev_exchange in enumerate(conversation_context, 1):
-                prompt_parts.append(f"  {i}. {prev_exchange}")
-
-        if metadata:
-            prompt_parts.append(f"Metadata: {json.dumps(metadata)}")
-
-        prompt_parts.extend(
-            [
-                "",
-                "Available top-level categories:",
-            ]
-        )
 
         for category in sorted(first_level):
             prompt_parts.append(f"  - {category}")
@@ -347,135 +319,287 @@ class IntelligentClassifier:
             for path in sorted(all_non_other_paths):
                 prompt_parts.append(f"  {path}")
 
+        # Build classification examples from presets
+        examples_lines = []
+        for input_text, path, _reason in TaxonomyPresets.CLASSIFICATION_EXAMPLES[
+            :8
+        ]:  # Use first 8 examples
+            examples_lines.append(f"  * '{input_text}' → {path}")
+
         prompt_parts.extend(
             [
                 "",
-                "Classification guidelines:",
-                "- MANDATORY: Use MINIMUM 2 levels, preferably 3-4 levels in taxonomy paths",
-                "- FORBIDDEN: Single-level paths like 'preferences', 'relationships', 'topics', 'goals' etc.",
-                "- ALWAYS use SPECIFIC, DEEP paths from the taxonomy - NEVER use just top-level categories",
-                "- PREFER existing COMPLETE paths that exist EXACTLY in the full taxonomy above",
-                "- Use the full hierarchical path with 3-4 levels (e.g., topics.health.mental_health NOT just 'topics')",
-                "- If content doesn't fit existing paths well, you can suggest NEW categories but with proper depth",
-                "- Examples of GOOD specific classifications:",
-                "  * 'I love mental health advocacy' → topics.health.mental_health (NOT just 'topics')",
-                "  * 'My friend Tom is great' → entity.people.mentioned.friends (NOT just 'relationships')",
-                "  * 'I work as a teacher' → profile.professional.occupation (NOT just 'profile')",
-                "  * 'I chose them for their inclusivity' → preferences.personal.values (NOT just 'preferences')",
-                "  * 'We have a great friendship' → relationships.people.friends.close (NOT just 'relationships')",
-                "- Use appropriate hierarchical depth (3-4 levels strongly recommended)",
-                "- Follow natural conceptual progression: general → specific",
-                "- Avoid stopping at intermediate levels - go to the most specific applicable path",
-                "- Consider existing similar paths for consistency",
+                "CLASSIFICATION RULES:",
+                "- EXACTLY 3 levels required: category.subcategory.type (e.g., profile.personal.identity)",
+                "- NEVER use 2 levels (profile.personal) or 4+ levels (profile.personal.identity.name)",
+                "- CREATE new categories/subcategories/types as needed if existing ones don't fit well",
+                "- You can invent new top-level categories (e.g., routine, tools, settings)",
+                "- You can invent new subcategories under existing categories",
+                "- You can invent new types under existing subcategories",
+                "- Examples of GOOD 3-level classifications:",
+                *examples_lines,
                 "",
-                "NEW TOP-LEVEL CATEGORY GUIDELINES:",
-                "- Only suggest new top-level categories if existing ones truly don't fit",
-                "- New categories should be broad, fundamental aspects of human experience",
-                "- Format: new_category.subcategory.specific_aspect",
-                "- Examples: entity.people.mentioned.friends, language.slang.expressions, topics.technology.artificial_intelligence",
+                "MEMORY RULES:",
+                "- is_memory=false for greetings, weather, transient chat",
+                "- is_memory=true for personal facts, preferences, relationships, goals, context, workflows",
                 "",
-                "CONTEXT USAGE GUIDELINES:",
-                "- CLASSIFY ONLY the main content (what the person actually said)",
-                "- The context (previous conversation) is ONLY for understanding - DO NOT extract information from it",
-                "- The context typically contains other people's questions/comments that prompted the response",
-                "- Example: Context: 'Friend: What do you like to do?' Content: 'I love playing guitar' → Classify 'I love playing guitar' NOT 'What do you like to do?'",
-                "- If the content references the context ('Yes, I do'), use context to understand what they're agreeing to, but classify based on the implied meaning in their response",
+                "CONTEXT USAGE:",
+                "- CLASSIFY ONLY the main content (what the user actually said)",
+                "- Context is for understanding only - DO NOT extract information from it",
                 "",
-                "MULTI-LABEL CLASSIFICATION (USE VERY SPARINGLY):",
-                "- ONLY use multiple paths when content contains information that belongs to DIFFERENT TOP-LEVEL CATEGORIES",
-                "- You can also suggest new top-level categories if content doesn't fit existing ones",
-                "- Example: 'I'm a single parent looking to adopt' maps to:",
-                "  * profile.living.arrangements (PROFILE category - single parent status)",
-                "  * goals.categories.personal.relationships (GOALS category - adoption goal)",
-                "- Example: 'Great job on the fundraiser, Alex! Cancer research is so important' maps to:",
-                "  * entity.people.mentioned.friends (ENTITY category - person mentioned)",
-                "  * topics.health.medical_conditions (TOPICS category - health topic discussed)",
-                "- Example: 'My colleague John mentioned he loves machine learning' maps to:",
-                "  * entity.people.mentioned.colleagues (ENTITY category - person mentioned)",
-                "  * topics.technology.artificial_intelligence (TOPICS category - subject discussed)",
-                "- DO NOT use multiple paths if both pieces of information belong to the SAME top-level category",
-                "- Examples of SINGLE path (same top-level category):",
-                "  * 'I work as a software engineer and enjoy coding' → profile.professional.occupation (both are PROFILE)",
-                "  * 'I want to learn guitar and piano' → goals.categories.education.skills (both are GOALS)",
-                "- Maximum 2 paths, and ONLY when they have different top-level categories",
-                "- When in doubt, use SINGLE path classification",
+                "MULTI-LABEL (USE SPARINGLY):",
+                "- ONLY use multiple paths when content belongs to DIFFERENT TOP-LEVEL CATEGORIES",
+                "- Maximum 2 paths, when in doubt use SINGLE path",
                 "",
+            ]
+        )
+
+        # Conditionally add metadata extraction guidelines (profile/timeline/location)
+        if self.enable_metadata_extraction:
+            prompt_parts.extend(
+                [
+                    "",
+                    "PROFILE UPDATE DETECTION:",
+                    "- Check if the content contains information that would UPDATE a user's PROFILE",
+                    "- Profile updates are DEFINITIVE facts about the user (3-level paths)",
+                    "- Examples of profile updates (use EXACTLY 3 levels):",
+                    "  * 'I'm 25 years old' → profile.personal.demographics",
+                    "  * 'I work at Google' → profile.professional.occupation",
+                    "  * 'I live in San Francisco' → profile.personal.location",
+                    "  * 'I graduated from Stanford' → profile.professional.education",
+                    "  * 'My name is John' → profile.personal.identity",
+                    "  * 'I'm married to Sarah' → relationships.family.spouse",
+                    "- If NO profile updates: return 'no_profile_update'",
+                    "- If profile updates exist: list them with 3-level path and new value",
+                    "",
+                    "",
+                    "TIMELINE EVENT DETECTION:",
+                    "- Use the session date provided in the dynamic section below for calculating relative dates",
+                    "- ALWAYS check if the content describes a PAST or PRESENT EVENT with temporal information",
+                    "- Timeline events are specific occurrences that happened at a particular time",
+                    "- Examples of timeline events with ACTUAL date calculation:",
+                    "  * 'Yesterday was my first day at the new job' (session: 15 March 2023) → date: '20230314'",
+                    "  * 'Last week I went to a conference' (session: 20 June 2023) → date: '20230613' (7 days before)",
+                    "  * 'I graduated from college in May 2020' → date: '20200501' (first of month)",
+                    "  * 'On March 15th, I came out to my parents' (session: 2023) → date: '20230315' (assume current year)",
+                    "  * 'Two months ago I started therapy' (session: 10 July 2023) → date: '20230510' (2 months before)",
+                    "- CRITICAL: Always provide ACTUAL 8-digit dates in YYYYMMDD format, NOT placeholders",
+                    "- Calculate relative dates precisely from the session date:",
+                    "  * 'yesterday' = session date minus 1 day",
+                    "  * 'last week' = session date minus 7 days",
+                    "  * 'last month' = session date minus ~30 days",
+                    "  * 'two days ago' = session date minus 2 days",
+                    "- Double-check your date arithmetic: if session is July 10, 2025 and content says 'yesterday', result should be July 9, 2025 → '20250709'",
+                    "- CRITICAL: If content contains multiple time references, ALWAYS prioritize the more recent/specific one:",
+                    "  * SPECIFICITY ORDER (most to least specific): 'yesterday' > 'two days ago' > 'last week' > 'last month'",
+                    "  * 'yesterday' is MORE SPECIFIC than 'last week' - use yesterday",
+                    "  * 'two days ago' is MORE SPECIFIC than 'last week' - use two days ago",
+                    "  * When in doubt, use the time reference that gives the most recent date",
+                    "- If only year/month given, use first day: 'May 2020' → '20200501'",
+                    "- If NO timeline events: return 'no_timeline_events'",
+                    "- If timeline events exist: list them with date and description",
+                    "",
+                    "",
+                    "LOCATION EVENT DETECTION:",
+                    "- CRITICAL: ALWAYS check if the content mentions ANY specific PLACES, LOCATIONS, or geographic references",
+                    "- Location events are activities, experiences, or events that happened at specific places",
+                    "- IMPORTANT: Look for location indicators like 'in', 'at', 'from', 'to' followed by place names",
+                    "- Examples of location events (MUST detect these patterns):",
+                    "  * 'The support group in Los Angeles has made me feel accepted' → location: 'Los Angeles', description: 'support group attendance'",
+                    "  * 'I went to a LGBTQ support group in San Francisco' → location: 'San Francisco', description: 'attended LGBTQ support group'",
+                    "  * 'We moved from New York to California last year' → location: 'New York', description: 'lived here previously' + location: 'California', description: 'moved here'",
+                    "  * 'I work at the downtown office' → location: 'downtown office', description: 'workplace'",
+                    "  * 'The conference was held at the convention center' → location: 'convention center', description: 'attended conference'",
+                    "  * 'I love visiting the beach on weekends' → location: 'beach', description: 'recreational visits'",
+                    "  * 'I want to visit Canada next year' → location: 'Canada', description: 'planned travel destination'",
+                    "  * 'Planning to go to Paris for vacation' → location: 'Paris', description: 'vacation destination'",
+                    "  * 'Would love to travel to Japan someday' → location: 'Japan', description: 'desired travel destination'",
+                    "- KEY PHRASES to detect: 'in [City]', 'at [Place]', 'from [Location]', 'to [Location]', 'want to visit [Place]', 'plan to go to [Place]', 'travel to [Place]'",
+                    "- Extract both specific locations (Los Angeles, San Francisco, New York) and local places (offices, centers, venues)",
+                    "- Normalize location names: 'NYC' → 'New York City', 'SF' → 'San Francisco', 'LA' → 'Los Angeles'",
+                    "- If NO location events: return 'no_location_events'",
+                    "- If location events exist: list them with location name and description",
+                    "",
+                ]
+            )
+
+        # JSON response format (varies based on metadata extraction setting)
+        if self.enable_metadata_extraction:
+            prompt_parts.extend(
+                [
+                    "JSON RESPONSE FORMAT:",
+                    "{",
+                    '  "is_memory": true/false,',
+                    '  "paths": ["primary.path.here", "secondary.path.here"] or ["single.path"] or null,',
+                    '  "confidence": 0.0-1.0,',
+                    '  "reasoning": "explanation of decision and path choices",',
+                    '  "profile_updates": "no_profile_update" or [{"path": "profile.path.here", "value": "new value"}],',
+                    '  "timeline_events": "no_timeline_events" or [{"date": "YYYYMMDD", "description": "event description"}],',
+                    '  "location_events": "no_location_events" or [{"location": "location name", "description": "activity/event description"}]',
+                    "}",
+                    "",
+                    "[STATIC_SECTION_END]",
+                ]
+            )
+        else:
+            prompt_parts.extend(
+                [
+                    "JSON RESPONSE FORMAT:",
+                    "{",
+                    '  "is_memory": true/false,',
+                    '  "paths": ["primary.path.here", "secondary.path.here"] or ["single.path"] or null,',
+                    '  "confidence": 0.0-1.0,',
+                    '  "reasoning": "explanation of decision and path choices"',
+                    "}",
+                    "",
+                    "[STATIC_SECTION_END]",
+                ]
+            )
+
+        # =================================================================
+        # DYNAMIC SECTION - This part changes with each request
+        # =================================================================
+        prompt_parts.extend(
+            [
                 "",
-                "PROFILE UPDATE DETECTION:",
-                "- ALWAYS check if the content contains information that would UPDATE a user's PROFILE",
-                "- Profile updates are DEFINITIVE facts about the user that replace previous information",
-                "- Examples of profile updates:",
-                "  * 'I'm 25 years old' → profile.personal.identity.age.current",
-                "  * 'I work at Google as a software engineer' → profile.professional.current.company.name + profile.professional.current.position.title",
-                "  * 'I live in San Francisco' → profile.personal.location.current.city",
-                "  * 'I graduated from Stanford in 2020' → profile.professional.education.formal.institutions + profile.professional.education.formal.years",
-                "  * 'My name is John Smith' → profile.personal.identity.name.first + profile.personal.identity.name.last",
-                "  * 'I'm married to Sarah' → profile.personal.family.spouse.name",
-                "- If NO profile updates: return 'no_profile_update'",
-                "- If profile updates exist: list them with path and new value",
+                "[DYNAMIC_SECTION_START]",
                 "",
+            ]
+        )
+
+        # Add threshold guidance (semi-dynamic based on user config)
+        threshold_guidance = []
+        if self.thresholds["low"] > 0.0:
+            threshold_guidance.append(
+                f"- IMPORTANT: User requires minimum {self.thresholds['low']:.1f} confidence to store ANY memory"
+            )
+        if self.thresholds["low"] >= 0.5:
+            threshold_guidance.append(
+                f"- BE SELECTIVE: Only store memories you're at least {self.thresholds['low']:.1f} confident about"
+            )
+        if self.thresholds["low"] >= 0.7:
+            threshold_guidance.append(
+                "- VERY CONSERVATIVE: User wants only high-quality, well-classified memories"
+            )
+
+        if threshold_guidance:
+            prompt_parts.append("User's confidence thresholds for this session:")
+            prompt_parts.extend(threshold_guidance)
+            prompt_parts.append("")
+
+        prompt_parts.extend(
+            [
+                f"User's minimum threshold: {self.thresholds['low']:.1f} (below this = not stored)",
+                f"Medium confidence threshold: {self.thresholds['medium']:.1f}",
+                f"High confidence threshold: {self.thresholds['high']:.1f}",
                 "",
-                "TIMELINE EVENT DETECTION:",
-                f"- Current session date: {metadata.get('session_date', 'unknown') if metadata else 'unknown'} (use this for calculating relative dates)",
-                "- ALWAYS check if the content describes a PAST or PRESENT EVENT with temporal information",
-                "- Timeline events are specific occurrences that happened at a particular time",
-                "- Examples of timeline events with ACTUAL date calculation:",
-                "  * 'Yesterday was my first day at the new job' (session: 15 March 2023) → date: '20230314'",
-                "  * 'Last week I went to a conference' (session: 20 June 2023) → date: '20230613' (7 days before)",
-                "  * 'I graduated from college in May 2020' → date: '20200501' (first of month)",
-                "  * 'On March 15th, I came out to my parents' (session: 2023) → date: '20230315' (assume current year)",
-                "  * 'Two months ago I started therapy' (session: 10 July 2023) → date: '20230510' (2 months before)",
-                "- CRITICAL: Always provide ACTUAL 8-digit dates in YYYYMMDD format, NOT placeholders",
-                "- Calculate relative dates precisely from the session date:",
-                "  * 'yesterday' = session date minus 1 day",
-                "  * 'last week' = session date minus 7 days",
-                "  * 'last month' = session date minus ~30 days",
-                "  * 'two days ago' = session date minus 2 days",
-                "- Double-check your date arithmetic: if session is July 10, 2025 and content says 'yesterday', result should be July 9, 2025 → '20250709'",
-                "- CRITICAL: If content contains multiple time references, ALWAYS prioritize the more recent/specific one:",
-                "  * SPECIFICITY ORDER (most to least specific): 'yesterday' > 'two days ago' > 'last week' > 'last month'",
-                "  * 'yesterday' is MORE SPECIFIC than 'last week' - use yesterday",
-                "  * 'two days ago' is MORE SPECIFIC than 'last week' - use two days ago",
-                "  * When in doubt, use the time reference that gives the most recent date",
-                "- If only year/month given, use first day: 'May 2020' → '20200501'",
-                "- If NO timeline events: return 'no_timeline_events'",
-                "- If timeline events exist: list them with date and description",
+                f"Current session date: {session_date} (use for calculating relative dates)",
                 "",
+            ]
+        )
+
+        # Add conversation context if provided
+        if conversation_context:
+            prompt_parts.extend(
+                [
+                    "Previous conversation context (ONLY for understanding, DO NOT classify based on this):",
+                    "Speaker Attribution Guide:",
+                    "  [SELF] = The person whose memory you're classifying speaking",
+                    "  [OTHER] = Someone else speaking to them",
+                    "",
+                ]
+            )
+            for i, prev_exchange in enumerate(conversation_context, 1):
+                prompt_parts.append(f"  {i}. {prev_exchange}")
+            prompt_parts.append("")
+
+        # Add metadata if provided
+        if metadata:
+            # Filter out session_date as it's already shown above
+            display_metadata = {
+                k: v for k, v in metadata.items() if k != "session_date"
+            }
+            if display_metadata:
+                prompt_parts.append(
+                    f"Additional metadata: {json.dumps(display_metadata)}"
+                )
+                prompt_parts.append("")
+
+        # Add the actual content to analyze (THE KEY DYNAMIC PART)
+        prompt_parts.extend(
+            [
+                "CONTENT TO ANALYZE:",
+                f"(from [SELF]): {content}",
                 "",
-                "LOCATION EVENT DETECTION:",
-                "- CRITICAL: ALWAYS check if the content mentions ANY specific PLACES, LOCATIONS, or geographic references",
-                "- Location events are activities, experiences, or events that happened at specific places",
-                "- IMPORTANT: Look for location indicators like 'in', 'at', 'from', 'to' followed by place names",
-                "- Examples of location events (MUST detect these patterns):",
-                "  * 'The support group in Los Angeles has made me feel accepted' → location: 'Los Angeles', description: 'support group attendance'",
-                "  * 'I went to a LGBTQ support group in San Francisco' → location: 'San Francisco', description: 'attended LGBTQ support group'",
-                "  * 'We moved from New York to California last year' → location: 'New York', description: 'lived here previously' + location: 'California', description: 'moved here'",
-                "  * 'I work at the downtown office' → location: 'downtown office', description: 'workplace'",
-                "  * 'The conference was held at the convention center' → location: 'convention center', description: 'attended conference'",
-                "  * 'I love visiting the beach on weekends' → location: 'beach', description: 'recreational visits'",
-                "  * 'I want to visit Canada next year' → location: 'Canada', description: 'planned travel destination'",
-                "  * 'Planning to go to Paris for vacation' → location: 'Paris', description: 'vacation destination'",
-                "  * 'Would love to travel to Japan someday' → location: 'Japan', description: 'desired travel destination'",
-                "- KEY PHRASES to detect: 'in [City]', 'at [Place]', 'from [Location]', 'to [Location]', 'want to visit [Place]', 'plan to go to [Place]', 'travel to [Place]'",
-                "- Extract both specific locations (Los Angeles, San Francisco, New York) and local places (offices, centers, venues)",
-                "- Normalize location names: 'NYC' → 'New York City', 'SF' → 'San Francisco', 'LA' → 'Los Angeles'",
-                "- If NO location events: return 'no_location_events'",
-                "- If location events exist: list them with location name and description",
+                "IMPORTANT: The content above is from [SELF] - classify based on their personal perspective/experience.",
                 "",
-                "Respond in JSON format:",
-                "{",
-                '  "is_memory": true/false,',
-                '  "paths": ["primary.path.here", "secondary.path.here"] or ["single.path"] or null,',
-                '  "confidence": 0.0-1.0,',
-                '  "reasoning": "explanation of decision and path choices",',
-                '  "profile_updates": "no_profile_update" or [{"path": "profile.path.here", "value": "new value"}],',
-                '  "timeline_events": "no_timeline_events" or [{"date": "YYYYMMDD", "description": "event description"}],',
-                '  "location_events": "no_location_events" or [{"location": "location name", "description": "activity/event description"}]',
-                "}",
+                "Now analyze the content and provide your JSON response:",
             ]
         )
 
         return "\n".join(prompt_parts)
+
+    def _build_fast_classification_prompt(
+        self,
+        content: str,
+        paths: list[str],
+        metadata: Optional[dict],
+        conversation_context: Optional[list[str]] = None,
+    ) -> str:
+        """
+        Build a minimal prompt for fast classification (no metadata extraction).
+
+        This prompt is optimized for speed over features:
+        - Classification examples showing the pattern
+        - Category descriptions for guidance
+        - Simple JSON output
+
+        ~600 tokens vs ~4500 tokens for full prompt = faster inference.
+        """
+        from memoir.taxonomy.taxonomy import TaxonomyPresets
+
+        # Build examples section
+        examples_lines = []
+        for input_text, path, _reason in TaxonomyPresets.CLASSIFICATION_EXAMPLES:
+            examples_lines.append(f'  "{input_text}" → {path}')
+
+        examples_str = "\n".join(examples_lines)
+
+        # Build categories section
+        categories_lines = []
+        for cat, desc in TaxonomyPresets.CATEGORY_DESCRIPTIONS.items():
+            categories_lines.append(f"  {cat}: {desc}")
+
+        categories_str = "\n".join(categories_lines)
+
+        # Minimal static section
+        prompt = f"""[STATIC_SECTION_START]
+Classify user content into taxonomy paths. Return JSON only.
+
+CATEGORIES:
+{categories_str}
+
+EXAMPLES (MUST be exactly 3 levels: category.subcategory.type):
+{examples_str}
+
+RULES:
+- EXACTLY 3 levels required: category.subcategory.type (e.g., profile.personal.identity)
+- NEVER use 2 levels (profile.personal) or 4+ levels (profile.personal.identity.name)
+- CREATE new categories/subcategories/types as needed if existing ones don't fit well
+- You can invent new top-level categories (e.g., routine, tools, settings)
+- You can invent new subcategories under existing categories
+- You can invent new types under existing subcategories
+- is_memory=false for greetings, weather, transient chat
+- is_memory=true for personal facts, preferences, relationships, goals, context, workflows
+
+FORMAT: {{"is_memory":bool,"paths":["path"],"confidence":float,"reasoning":"brief"}}
+[STATIC_SECTION_END]
+
+[DYNAMIC_SECTION_START]
+CONTENT: {content}
+[DYNAMIC_SECTION_END]"""
+
+        return prompt
 
     def _fix_common_json_issues(self, json_str: str) -> str:
         """Fix common JSON formatting issues from LLM responses."""
@@ -606,8 +730,24 @@ class IntelligentClassifier:
                     path_parts = path.split(".")
                     top_level_category = path_parts[0]
 
-                    # Check if this is a new top-level category
+                    # Accept well-formed paths that follow the EXACTLY 3 levels pattern:
+                    # - Known top-level category (profile, entity, preferences, etc.)
+                    # - Exactly 3 levels of depth (hard requirement)
                     if (
+                        top_level_category in existing_top_level
+                        and len(path_parts) == 3
+                    ):
+                        logger.info(f"Accepting well-formed 3-level path: {path}")
+                        validated_paths.append(path)
+                    elif (
+                        top_level_category in existing_top_level and len(path_parts) > 3
+                    ):
+                        # Truncate to 3 levels
+                        truncated_path = ".".join(path_parts[:3])
+                        logger.info(f"Truncating {path} to 3 levels: {truncated_path}")
+                        validated_paths.append(truncated_path)
+                    # Check if this is a new top-level category
+                    elif (
                         top_level_category not in existing_top_level
                         and len(path_parts) >= 2
                     ):

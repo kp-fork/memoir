@@ -41,6 +41,8 @@ jobs:
         git config --global user.name "Test User"
 
     - name: Run tests with pytest
+      env:
+        PYTHONWARNINGS: ignore
       run: |
         pytest tests/ -v --cov=memoir --cov-report=xml --cov-report=term-missing --ignore=tests/test_ui_e2e.py
 
@@ -78,11 +80,11 @@ jobs:
 
     - name: Run Ruff (linting)
       run: |
-        ruff check src/ tests/ examples/ --exclude tests/test_ui_e2e.py
+        ruff check src/ tests/ benchmarks/ --exclude tests/test_ui_e2e.py
 
     - name: Run isort (import sorting)
       run: |
-        isort --check-only --diff src/ tests/ examples/ --skip tests/test_ui_e2e.py
+        isort --check-only --diff src/ tests/ benchmarks/ --skip tests/test_ui_e2e.py
 
     - name: Run Bandit (security)
       run: |
