@@ -141,12 +141,11 @@ def get_cli_schema(group: click.Group) -> dict[str, Any]:
     # Extract commands by group
     command_groups = {
         "store": ["new", "connect", "status", "refresh"],
-        "memory": ["remember", "recall", "forget"],
+        "memory": ["remember", "recall", "ls", "forget"],
         "branch": ["branch", "checkout", "merge", "time-travel", "diff"],
         "crypto": ["proof", "verify", "blame"],
         "analysis": ["summarize"],
         "taxonomy": ["taxonomy"],
-        "utility": ["ui", "tui"],
     }
 
     for group_name, cmd_names in command_groups.items():
@@ -363,6 +362,7 @@ cli.add_command(taxonomy.taxonomy)
 # Memory commands
 cli.add_command(memory.remember)
 cli.add_command(memory.recall)
+cli.add_command(memory.ls)
 cli.add_command(memory.forget)
 
 # Branch commands
@@ -379,43 +379,6 @@ cli.add_command(crypto.blame)
 
 # Analysis commands
 cli.add_command(analysis.summarize)
-
-
-@cli.command()
-@click.option("-p", "--port", default=8080, help="Port number")
-@click.option("--no-browser", is_flag=True, help="Don't open browser")
-@pass_context
-def ui(ctx: MemoirContext, port: int, no_browser: bool):
-    """Launch web UI."""
-    import webbrowser
-
-    if not no_browser:
-        webbrowser.open(f"http://localhost:{port}")
-
-    ctx.info(f"Starting web UI on port {port}...")
-
-    from memoir.ui.server import run_server
-
-    run_server(port=port)
-
-
-@cli.command()
-@click.option("-c", "--connect", "store_path", help="Store to connect")
-@pass_context
-def tui(ctx: MemoirContext, store_path: Optional[str]):
-    """Launch interactive TUI."""
-    path = store_path or ctx.store_path
-
-    try:
-        from memoir.tui.app import MemoirTUI
-
-        app = MemoirTUI(store_path=path)
-        app.run()
-    except ImportError:
-        ctx.error(
-            "TUI not available. Install with: pip install memoir[tui]",
-            EXIT_ERROR,
-        )
 
 
 def main():

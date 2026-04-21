@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# SessionStart hook: auto-init the memoir store, surface status + current branch.
+#
+# Discard stdin before sourcing common.sh — session-start never uses $INPUT and
+# `claude --resume` can leave the pipe open indefinitely, which would block the
+# `cat` inside common.sh on macOS.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec < /dev/null
+source "$SCRIPT_DIR/common.sh"
+
+# If the CLI isn't installed, surface a clear install hint and stop — no fallbacks.
+if [ -z "$MEMOIR_CMD" ]; then
+  status="[memoir] CLI not found on PATH — install with: pip install -e /path/to/memoir  (or pip install memoir once published). Capture/recall disabled."
+  json_status=$(_json_encode_str "$status")
+  echo "{\"systemMessage\": $json_status}"
+  exit 0
+fi
+
+# Create the store on first run (idempotent).
+if ! ensure_store; then
+  status="[memoir] Failed to initialize store at $MEMOIR_STORE_PATH. Run: memoir new \"$MEMOIR_STORE_PATH\" --taxonomy-builtin"
+  json_status=$(_json_encode_str "$status")
+  echo "{\"systemMessage\": $json_status}"
+  exit 0
+fi
+
+# Auto-match memoir branch to current code branch (creates from main if
+# missing; honors sticky opt-out). Failures are non-fatal — we just end
+# up on whatever memoir branch was already current.
+auto_match_memoir_branch || true
+
+# Pull status JSON — contains branch, commit_count, memory_count (total).
+STATUS_JSON=$(memoir_json status || true)
+BRANCH=$(_json_val "$STATUS_JSON" "branch" "main")
+COMMITS=$(_json_val "$STATUS_JSON" "commit_count" "0")
+TOTAL_MEMORIES=$(_json_val "$STATUS_JSON" "memory_count" "0")
+
+# Compute *user-facing* memory count by subtracting entries in memoir's
+# internal taxonomy:v1:* namespaces. A brand-new store created with
+# `--taxonomy-builtin` has ~8 taxonomy entries that are classification
+# hints, not user memories; showing them in the status line as "8 memories"
+# confuses users who expect that number to reflect what they've captured.
+# `summarize taxonomy --json` returns a per-namespace count map; we sum the
+# non-taxonomy entries. Quick read, no LLM call, safe to run every session.
+SUMMARY_JSON=$(memoir_json summarize taxonomy 2>/dev/null || true)
+USER_MEMORIES="$TOTAL_MEMORIES"
+if [ -n "$SUMMARY_JSON" ]; then
+  USER_MEMORIES=$(python3 -c "
+import json, sys
+try:
+    obj = json.loads(sys.argv[1])
+    ns = obj.get('namespaces', {}) or {}
+    print(sum(v for k, v in ns.items() if not k.startswith('taxonomy:')))
+except Exception:
+    print(sys.argv[2])
+" "$SUMMARY_JSON" "$TOTAL_MEMORIES" 2>/dev/null || echo "$TOTAL_MEMORIES")
+fi
+
+# Status line:
+# - Under the new auto-matching default, code and memoir branches should agree,
+#   so we collapse to just `<branch>`. When they diverge (user chose a sticky
+#   opt-out memoir branch), show `<code>+<memory>*` — the `*` signals "sticky".
+# - Falls back to just `<memory-branch>` when there's no code git repo.
+CODE_BRANCH=$(code_git_branch)
+if [ -n "$CODE_BRANCH" ] && [ "$CODE_BRANCH" = "$BRANCH" ]; then
+  DISPLAY_BRANCH="${BRANCH}"
+elif [ -n "$CODE_BRANCH" ]; then
+  DISPLAY_BRANCH="${CODE_BRANCH}+${BRANCH}*"
+else
+  DISPLAY_BRANCH="${BRANCH}"
+fi
+# Compute unmerged-branch list once; used for both the status-line summary
+# (visible to the user) and the additionalContext block (visible to Claude).
+unmerged=$(list_unmerged_memoir_branches 2>/dev/null || true)
+unmerged_count=0
+if [ -n "$unmerged" ]; then
+  unmerged_count=$(printf '%s\n' "$unmerged" | grep -c .)
+fi
+
+status="[memoir] ${DISPLAY_BRANCH} · ${USER_MEMORIES} memories · ${COMMITS} commits"
+if [ "${MEMOIR_NO_CAPTURE:-}" = "1" ]; then
+  status+=" · capture disabled"
+fi
+if [ "$unmerged_count" -gt 0 ]; then
+  if [ "$unmerged_count" -eq 1 ]; then
+    status+=" · 1 branch ahead of main (/memoir-unmerged)"
+  else
+    status+=" · ${unmerged_count} branches ahead of main (/memoir-unmerged)"
+  fi
+fi
+
+# Inject a short taxonomy snapshot as additionalContext so Claude sees what
+# kinds of memories exist without having to invoke the recall skill up front.
+# Reuses SUMMARY_JSON fetched above; filters the same taxonomy:v1:* noise.
+context=""
+if [ "$USER_MEMORIES" != "0" ] && [ -n "$SUMMARY_JSON" ]; then
+  ns_list=$(python3 -c "
+import json, sys
+try:
+    obj = json.loads(sys.argv[1])
+    ns = obj.get('namespaces', {}) or {}
+    user_ns = {k: v for k, v in ns.items() if not k.startswith('taxonomy:')}
+    if not user_ns:
+        sys.exit(0)
+    lines = [f'- {k}: {v} memor' + ('y' if v == 1 else 'ies') for k, v in sorted(user_ns.items())]
+    print('# Memoir store — current state')
+    print(f'branch: $DISPLAY_BRANCH  ·  user memories: $USER_MEMORIES')
+    print('')
+    print('namespaces:')
+    print('\n'.join(lines))
+except Exception:
+    pass
+" "$SUMMARY_JSON" 2>/dev/null || true)
+  context="$ns_list"
+fi
+
+# Append the detailed unmerged-branch block to additionalContext (already
+# computed above; $unmerged holds "<branch>\t<count>" per line).
+# Note: /memoir-sync-branch is currently disabled due to an upstream prollytree
+# merge bug (see plugins/claude-code/TODO.md). We still surface the unmerged
+# branches so users are aware of accumulating state — they just can't promote
+# to main until the upstream fix lands.
+if [ -n "$unmerged" ]; then
+  unmerged_block="# memoir — unmerged branches detected"$'\n'
+  unmerged_block+="You have captured memories on these branches that aren't on main yet:"$'\n\n'
+  while IFS=$'\t' read -r b n; do
+    [ -z "$b" ] && continue
+    unmerged_block+="- memoir/${b}: ${n} unmerged commits"$'\n'
+  done <<< "$unmerged"
+  unmerged_block+=$'\n'"⚠ Promotion to main (/memoir-sync-branch) is currently disabled — see plugins/claude-code/TODO.md. Feature branches retain their captures; re-enable after the upstream prollytree merge bugfix."
+  if [ -n "$context" ]; then
+    context="${context}"$'\n\n'"${unmerged_block}"
+  else
+    context="$unmerged_block"
+  fi
+fi
+
+json_status=$(_json_encode_str "$status")
+if [ -n "$context" ]; then
+  json_context=$(_json_encode_str "$context")
+  echo "{\"systemMessage\": $json_status, \"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": $json_context}}"
+else
+  echo "{\"systemMessage\": $json_status}"
+fi
