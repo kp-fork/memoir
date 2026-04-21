@@ -6,20 +6,16 @@ These documents provide comprehensive explanations of the algorithms, design dec
 
 ## Component Theory
 
-```{toctree}
-:maxdepth: 2
-
-classifier
-search
-memento
-```
+- [Classifier](classifier.md)
+- [Search](search.md)
+- [Memento](memento.md)
 
 ## Overview
 
 The theory documentation explores three fundamental aspects of Memoir:
 
 ### Classifier Theory
-Detailed analysis of the two classifier approaches (SemanticClassifier and IntelligentClassifier), including their algorithms, performance characteristics, and use cases.
+Detailed analysis of the two classifier approaches (`SemanticClassifier` in `classifier/semantic.py` and `IntelligentClassifier` in `classifier/intelligent.py`), including their algorithms, performance characteristics, and use cases.
 
 - **SemanticClassifier**: High-performance, cache-optimized classification with pattern matching fallbacks
 - **IntelligentClassifier**: Advanced multi-stage classification with memory-worthiness detection and event extraction

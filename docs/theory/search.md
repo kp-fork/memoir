@@ -9,12 +9,14 @@ The Memoir project implements an LLM-powered search engine for retrieving memori
 ## Core Problem Statement
 
 Traditional AI memory systems suffer from fundamental search inefficiencies:
+
 - **O(n) Complexity**: Vector similarity search across entire corpus
 - **High Latency**: 150-750ms for embeddings + similarity computation
 - **Opaque Ranking**: Black-box similarity scores without interpretability
 - **No Hierarchical Leverage**: Flat search space ignoring semantic relationships
 
 Memoir solves this through **hierarchical semantic search** where:
+
 - Memories are pre-organized into semantic paths (via classification)
 - Search can leverage the hierarchical structure for O(log n) operations
 - Path-based filtering dramatically reduces search space
@@ -28,6 +30,7 @@ Memoir:      query → path selection → O(log n) retrieval → filtered result
 ```
 
 The search system exploits the pre-classified semantic structure to:
+
 - **Reduce Search Space**: Focus only on relevant taxonomy branches
 - **Improve Interpretability**: Clear path-based result organization
 - **Enable Prefix Queries**: Efficient hierarchical exploration
@@ -67,6 +70,7 @@ for _, path, data in all_memories:
 - **Sample**: First 100 chars for context
 
 This provides the LLM with:
+
 - Complete path inventory
 - Memory density information
 - Content previews for informed selection
@@ -82,6 +86,7 @@ Please select the most relevant memory paths from:
 - context.conversation.history (10 memories): Discussed AI...
 
 Instructions:
+
 - Select 1-3 paths most relevant to query
 - Return ONLY path names, one per line
 - If no paths relevant, return "NONE"
@@ -95,30 +100,9 @@ Instructions:
 - **Clear Format**: Line-separated paths for parsing
 - **Null Case**: Explicit "NONE" for no matches
 
-##### Stage 3: Content Refinement (200-500ms)
+##### Stage 3: Memory Retrieval (5-20ms)
 ```python
-# Second LLM call to verify selected paths based on actual content
-content_prompt = f"""You are refining memory search results based on actual content.
-
-Query: "{query}"
-
-Here are the candidate paths with their actual content:
-[path and content samples]
-
-Instructions:
-- Look at the actual CONTENT, not just the path names
-- Select only paths whose content directly answers or relates to the query
-- Return ONLY the path names, one per line
-"""
-```
-
-This two-stage refinement ensures:
-- **Path-based filtering**: First pass uses semantic path meaning
-- **Content-based verification**: Second pass confirms with actual data
-
-##### Stage 4: Memory Retrieval (5-20ms)
-```python
-for path in refined_paths[:limit]:
+for path in selected_paths[:limit]:
     path_memories = _get_memories_from_path(namespace, path, all_memories)
     results.extend(path_memories)
 
@@ -146,10 +130,9 @@ except Exception as e:
 
 #### Performance Characteristics
 - **Path Discovery**: 10-50ms
-- **LLM Path Selection**: 200-500ms
-- **Content Refinement**: 200-500ms (optional)
+- **LLM Path Selection**: 200-500ms (single LLM call; prompt caching on cached sections)
 - **Memory Retrieval**: 5-20ms
-- **Total Latency**: 215-570ms typical
+- **Total Latency**: 215-570ms typical (500-800ms measured end-to-end)
 - **Memory Usage**: O(all_paths + selected_memories)
 - **LLM Token Usage**: ~500-1500 tokens per search
 
@@ -160,7 +143,7 @@ except Exception as e:
 - Handles complex, abstract queries
 - Leverages memory organization
 - Provides reasoning transparency
-- Two-stage refinement improves accuracy
+- Single LLM call keeps latency bounded
 
 **Limitations**:
 - Higher latency (LLM dependency)
