@@ -3,305 +3,338 @@ type: examples
 id: general-examples
 name: General Classification Examples
 domain: general
-version: 1.0.0
-description: Classification examples teaching the LLM the 3-level path pattern
+version: 1.1.0
+description: Classification examples teaching the LLM the 3-level path pattern. Coding-agent scenarios lead; general-purpose examples retained for non-coding use.
 ---
 
 # Classification Examples
 
 Examples teach the classifier the pattern for categorizing content into 3-level paths.
-
-## profile
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| My name is Sarah | profile.personal.identity | personal identity |
-| I am 25 years old | profile.personal.demographics | demographic info |
-| I live in San Francisco | profile.personal.location | living location |
-| I work at Google as a software engineer | profile.professional.occupation | job info |
-| I graduated from Stanford with a CS degree | profile.professional.education | education |
-| I know Python, JavaScript, and Rust | profile.professional.skills | technical skills |
-
-## preferences
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| I love playing guitar | preferences.hobbies.music | hobby preference |
-| I prefer working from home | preferences.work.remote | work style |
-| My favorite food is sushi | preferences.food.cuisine | food preference |
-| I like reading sci-fi books | preferences.entertainment.books | entertainment |
-| I prefer VS Code over other editors | preferences.tools.editors | tool preference |
-| I like using TypeScript for frontend | preferences.coding.languages | language preference |
-| I prefer Git Flow branching strategy | preferences.coding.workflow | workflow preference |
-| I use pytest for testing | preferences.tools.testing | testing preference |
-| I prefer Docker over VMs | preferences.tools.infrastructure | infra preference |
-| I like TailwindCSS for styling | preferences.coding.frameworks | framework preference |
-| I prefer REST over GraphQL | preferences.coding.apis | API preference |
-| I use Vim keybindings everywhere | preferences.tools.keybindings | keybinding preference |
-| I prefer Claude over GPT for coding | preferences.ai.models | AI model preference |
-| I like using LangChain for agents | preferences.ai.frameworks | AI framework preference |
-| I prefer streaming responses | preferences.ai.interaction | AI interaction style |
-| I use GitHub Copilot daily | preferences.ai.assistants | AI assistant preference |
-| I use black for code formatting | preferences.tools.formatting | formatting tool |
-| I prefer functional programming style | preferences.coding.paradigms | coding paradigm |
-| I like test-driven development approach | preferences.coding.methodology | dev methodology |
-| I use tmux for terminal sessions | preferences.tools.terminal | terminal tool |
-| I prefer PostgreSQL over MySQL | preferences.tools.databases | database preference |
-| I use Homebrew for packages | preferences.tools.packages | package manager |
-| I prefer monorepos over multirepo | preferences.coding.architecture | repo architecture |
-| I use Zsh with Oh My Zsh | preferences.tools.shell | shell preference |
-| I prefer async/await over callbacks | preferences.coding.patterns | coding pattern |
-| I like using make for builds | preferences.tools.build | build tool |
-| I use embeddings for search | preferences.ai.techniques | AI technique |
-| I prefer RAG over fine-tuning | preferences.ai.approaches | AI approach |
-| I use LlamaIndex for indexing | preferences.ai.tools | AI tool |
-| I chain prompts for tasks | preferences.ai.prompting | prompting style |
-| I prefer JSON output from LLMs | preferences.ai.output | output format |
-| I use vector DBs for memory | preferences.ai.storage | AI storage |
-| I prefer smaller fast models | preferences.ai.performance | AI performance |
-| I use tool calling extensively | preferences.ai.capabilities | AI capabilities |
-
-## workflow
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| Always run tests before committing | workflow.coding.testing | dev workflow rule |
-| Use feature branches for all changes | workflow.coding.branching | git workflow |
-| Deploy to staging before production | workflow.devops.deployment | deployment workflow |
-| Review PRs within 24 hours | workflow.coding.review | review workflow |
-| Write docs for all public APIs | workflow.coding.documentation | doc workflow |
-| Use semantic versioning for releases | workflow.devops.versioning | versioning workflow |
-| Run linting on every save | workflow.automation.linting | auto-lint workflow |
-| Auto-format code on commit | workflow.automation.formatting | format workflow |
-| Send Slack alerts on build failures | workflow.automation.notifications | alert workflow |
-| Backup database every 6 hours | workflow.automation.backup | backup workflow |
-| Sync issues from GitHub to Jira | workflow.automation.sync | sync workflow |
-| Auto-generate changelog from commits | workflow.automation.changelog | changelog workflow |
-| Squash commits before merging | workflow.coding.merging | merge workflow |
-| Run security scans in CI pipeline | workflow.devops.security | security workflow |
-| Use conventional commits format | workflow.coding.commits | commit workflow |
-| Require two approvals for PRs | workflow.coding.approvals | approval workflow |
-| Auto-deploy on merge to main | workflow.devops.releases | release workflow |
-| Run integration tests every night | workflow.automation.testing | test workflow |
-| Generate API docs automatically | workflow.automation.docs | doc generation |
-| Rotate secrets every 90 days | workflow.devops.secrets | secrets workflow |
-| Tag releases with git tags | workflow.devops.tagging | tagging workflow |
-| Run smoke tests after deploy | workflow.devops.validation | validation workflow |
+Coding-agent examples lead within each category; general-purpose examples follow for
+non-coding use cases.
 
 ## context
 
+Heaviest-used L2 for coding agents — "what is this codebase, how do we run it, who owns what."
+
 | Input | Path | Reasoning |
 |-------|------|-----------|
-| This project uses React and Node.js | context.project.stack | tech stack |
-| The main branch is protected | context.project.repository | repo settings |
-| We follow Airbnb style guide | context.project.standards | code standards |
-| The API is hosted on AWS Lambda | context.project.infrastructure | infra context |
-| We use PostgreSQL as the database | context.project.database | database context |
-| CI/CD is configured with GitHub Actions | context.project.cicd | CI/CD context |
-| Our team uses Scrum methodology | context.team.methodology | team process |
-| Sprint reviews are every Friday | context.team.meetings | meeting schedule |
-| Alice is the tech lead | context.team.roles | team roles |
-| We're in the EST timezone | context.team.timezone | timezone info |
-| We use Kubernetes for orchestration | context.project.orchestration | orchestration |
-| Redis is used for caching | context.project.caching | caching context |
+| Python 3.10+, uses click / langchain / langgraph | context.project.stack | tech stack |
+| Monorepo under src/memoir/, tests mirror the tree | context.project.architecture | repo layout |
+| Lint before commit: make format && make lint && make test | context.project.standards | project standards |
+| GitHub Actions CI runs lint/test/security/docs | context.project.cicd | CI/CD |
+| Ships as PyPI package memoir-ai + Docker via ./docker.sh | context.project.deploy | deploy targets |
+| Store backend is ProllyTree on git with structural sharing | context.project.backend | backend choice |
+| CLI entry: memoir = memoir.cli.main:main | context.project.entrypoints | entry points |
+| Test data must live under /tmp/, never in the repo | context.project.standards | hard rule |
+| mypy non-blocking due to ~237 pre-existing type errors | context.project.debt | known debt |
+| Scope: local-dev first, shared stores on roadmap | context.project.scope | project scope |
+| MVP 80% complete, feature-freeze next Friday | context.project.status | current status |
+| Main branch protected, squash-merge required | context.project.repository | repo rules |
 | We follow trunk-based development | context.project.branching | branching model |
-| The API uses JWT for auth | context.project.authentication | auth context |
-| We use Datadog for monitoring | context.project.monitoring | monitoring context |
-| Our SLA is 99.9% uptime | context.project.sla | SLA context |
-| We have daily standups at 10am | context.team.standups | standup schedule |
-| Documentation lives in Confluence | context.team.documentation | doc platform |
-| We use Slack for communication | context.team.communication | communication |
-| Code reviews are async | context.team.reviews | review style |
+| Auth uses JWT with 15-min access + 30-day refresh | context.project.authentication | auth scheme |
+| API is hosted on AWS Lambda behind API Gateway | context.project.infrastructure | infra shape |
+| PostgreSQL is the primary datastore | context.project.database | DB choice |
+| Redis for session cache + rate limiting | context.project.caching | cache layer |
+| Datadog for metrics, Sentry for errors | context.project.monitoring | observability |
+| SLA is 99.9% uptime during business hours | context.project.sla | SLA |
+| Team uses Scrum with 2-week sprints | context.team.methodology | team process |
+| Alice owns auth, Bob owns storage, Carla owns UI | context.team.roles | ownership map |
+| Async PR reviews; ping in Slack after 4h | context.team.reviews | review norm |
+| Standup at 10am PST daily | context.team.meetings | schedule |
+| Docs live in docs/ (mkdocs), ADRs in docs/decisions/ | context.team.documentation | doc platform |
+| We use Linear for issues, not GitHub Projects | context.team.communication | tool choice |
 
-## relationships
+## workflow
 
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| My friend Tom is helpful | relationships.friends.close | friendship |
-| My sister lives in New York | relationships.family.siblings | family |
-| My manager is very supportive | relationships.professional.manager | work relationship |
-| I mentor two junior developers | relationships.professional.mentees | mentorship |
-
-## goals
+Process rules agents must follow. Distinguish from `preferences` (taste) and `routine` (habit).
 
 | Input | Path | Reasoning |
 |-------|------|-----------|
-| I want to learn Python | goals.education.skills | learning goal |
-| I'm saving for a house | goals.financial.savings | financial goal |
-| I want to become a tech lead | goals.career.advancement | career goal |
-| I plan to contribute to open source | goals.projects.opensource | project goal |
-| I want to build a SaaS product | goals.projects.startup | startup goal |
-| I'm working towards AWS certification | goals.education.certifications | cert goal |
-| I want to learn Rust | goals.education.languages | language goal |
-| I plan to get CKAD certified | goals.education.certifications | cert goal |
-| I want to build an AI agent | goals.projects.ai | AI project goal |
-| I want better test coverage | goals.projects.quality | quality goal |
-| I aim to reduce deploy time | goals.projects.performance | perf goal |
-| I want to mentor juniors | goals.career.mentoring | mentoring goal |
-| I want to lead a team | goals.career.leadership | leadership goal |
-| I plan to start a blog | goals.projects.content | content goal |
+| Lint and tests must pass before every commit | workflow.coding.gates | commit gate |
+| Never run git push unless user explicitly asks | workflow.coding.push | push rule |
+| Feature branches off main, squash-merge back | workflow.coding.branching | branch strategy |
+| Two approvals required for production code | workflow.coding.approvals | approval rule |
+| Conventional commits format for every message | workflow.coding.commits | commit style |
+| PRs reviewed within 24 hours | workflow.coding.review | SLO |
+| mypy runs in non-blocking mode | workflow.coding.typecheck | type gate |
+| Always add tests with new code | workflow.coding.testing | test rule |
+| Write docs for all public APIs | workflow.coding.documentation | doc rule |
+| Squash commits before merging to main | workflow.coding.merging | merge rule |
+| Auto-format on save with black + prettier | workflow.automation.formatting | auto-format |
+| Run ruff in pre-commit hook | workflow.automation.linting | auto-lint |
+| Pre-push hook runs fast test subset | workflow.automation.testing | auto-test |
+| Auto-generate changelog from PR titles | workflow.automation.changelog | changelog |
+| Sync GitHub issues to Linear nightly | workflow.automation.sync | integration |
+| Slack alert on build failure | workflow.automation.notifications | alerting |
+| Deploy to staging first, then prod after smoke tests | workflow.devops.deployment | deploy rule |
+| Semantic versioning, signed git tags | workflow.devops.versioning | release policy |
+| Rotate secrets every 90 days | workflow.devops.secrets | secrets rule |
+| Run security scans in CI | workflow.devops.security | scan rule |
+| Auto-deploy on merge to main (dev env) | workflow.devops.releases | release trigger |
+| Smoke tests after every prod deploy | workflow.devops.validation | post-deploy |
+| Tag releases with v<major>.<minor>.<patch> | workflow.devops.tagging | tag format |
+| Nightly integration test run against staging | workflow.automation.testing | nightly |
 
-## entity
+## preferences
 
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| Tom helped me yesterday | entity.people.friends | mentioned person |
-| I visited Paris last summer | entity.places.cities | place mentioned |
-| I work at Microsoft | entity.organizations.companies | org mentioned |
-| The meeting is at 3pm | entity.events.scheduled | scheduled event |
-| I'm using the user-service repo | entity.code.repositories | repo mentioned |
-| The bug is in auth.py line 42 | entity.code.files | file mentioned |
-| The UserService handles auth | entity.code.services | service entity |
-| Check the utils.py module | entity.code.modules | module entity |
-| The /api/users endpoint | entity.code.endpoints | endpoint entity |
-| The User model in models.py | entity.code.models | model entity |
-| The CI failed at build step | entity.events.failures | failure event |
-| Meeting with product tomorrow | entity.events.meetings | meeting entity |
-| The deploy is scheduled for 5pm | entity.events.deployments | deployment event |
-| John from the backend team | entity.people.colleagues | colleague mention |
-
-## topics
+Taste/style rather than hard rules. Coding-tool preferences lead.
 
 | Input | Path | Reasoning |
 |-------|------|-----------|
-| Mental health is important | topics.health.wellness | health topic |
-| The stock market is volatile | topics.finance.investing | finance topic |
-| AI is changing everything | topics.technology.ai | tech topic |
-| Remote work is the future | topics.career.workplace | career topic |
-| Microservices have trade-offs | topics.architecture.patterns | architecture topic |
-| TypeScript improves code quality | topics.coding.languages | language topic |
-| Kubernetes is complex but powerful | topics.devops.orchestration | devops topic |
-| Testing is essential for quality | topics.coding.practices | practice topic |
-| Clean architecture matters | topics.architecture.principles | arch principle |
-| DDD helps manage complexity | topics.architecture.methodologies | methodology topic |
-| Event sourcing has trade-offs | topics.architecture.patterns | pattern discussion |
-| Observability is key for ops | topics.devops.observability | devops topic |
-| GitOps simplifies deployments | topics.devops.practices | devops practice |
-| Shift-left testing helps | topics.coding.testing | testing topic |
-| Code reviews improve quality | topics.coding.collaboration | collaboration topic |
-| Tech debt should be managed | topics.coding.maintenance | maintenance topic |
-| CI/CD is essential now | topics.devops.automation | automation topic |
-| Containers changed everything | topics.devops.containers | container topic |
+| I prefer TypeScript strict mode everywhere | preferences.coding.languages | language preference |
+| pytest over unittest for Python tests | preferences.coding.testing | test framework |
+| Functional style for Go, OOP for Java | preferences.coding.paradigms | paradigm |
+| Trunk-based development over GitFlow | preferences.coding.workflow | workflow preference |
+| REST over GraphQL unless there's a reason | preferences.coding.apis | API style |
+| Monorepos with workspaces over multi-repo | preferences.coding.architecture | repo model |
+| Conventional commits format | preferences.coding.commits | commit style |
+| TDD when the domain is unclear, otherwise after | preferences.coding.methodology | dev methodology |
+| async/await over raw callbacks / promises | preferences.coding.patterns | patterns |
+| VS Code with Vim keybindings | preferences.tools.editors | editor |
+| black + ruff for Python formatting | preferences.tools.formatting | formatter |
+| tmux for terminal multiplexing | preferences.tools.terminal | terminal |
+| PostgreSQL over MySQL, SQLite for tests | preferences.tools.databases | database |
+| Docker for local dev, Kubernetes for prod | preferences.tools.infrastructure | infra tooling |
+| Homebrew for system packages, uv for Python | preferences.tools.packages | package manager |
+| Zsh with oh-my-zsh and p10k prompt | preferences.tools.shell | shell |
+| Make for builds, not bespoke scripts | preferences.tools.build | build tool |
+| Terse agent output; no explanations unless asked | preferences.tools.output | agent output |
+| Use Claude for code review, GPT for brainstorm | preferences.ai.models | model routing |
+| Chain Haiku → Sonnet → Opus by task complexity | preferences.ai.routing | complexity routing |
+| Structure prompts as system + tools + task | preferences.ai.prompting | prompt style |
+| JSON output from LLMs when downstream parses | preferences.ai.output | output format |
+| Prompt caching on for static context | preferences.ai.performance | caching |
+| LangChain for agents, LangGraph for workflows | preferences.ai.frameworks | AI framework |
+| I work best from a quiet home office | preferences.work.environment | work env |
+| I test in-place before landing anything | preferences.work.testing | testing habit |
+| I love playing guitar | preferences.hobbies.music | hobby |
+| My favorite food is sushi | preferences.food.cuisine | food |
 
-## experience
+## knowledge
 
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| I had a great interview | experience.work.interviews | work experience |
-| My wedding was amazing | experience.life.milestones | life event |
-| I debugged a tricky race condition | experience.coding.debugging | coding experience |
-| I migrated our monolith to microservices | experience.projects.migrations | project experience |
-| I gave a talk at PyCon | experience.professional.speaking | speaking experience |
-| I optimized a slow SQL query | experience.coding.optimization | optimization exp |
-| I set up the monitoring stack | experience.projects.infrastructure | infra experience |
-| I led the security audit | experience.projects.security | security experience |
-| I wrote the API documentation | experience.projects.documentation | doc experience |
-| I onboarded five engineers | experience.professional.mentoring | mentoring exp |
-| I designed the payment system | experience.projects.design | design experience |
-| I fixed a production outage | experience.coding.incidents | incident experience |
-| I implemented feature flags | experience.coding.features | feature experience |
-
-## routine
+Non-obvious technical knowledge. Distinct from `context` (facts about the project) and `topics` (opinion).
 
 | Input | Path | Reasoning |
 |-------|------|-----------|
-| I wake up at 6am every day | routine.daily.morning | morning routine |
-| I exercise every morning | routine.daily.exercise | exercise routine |
-| I do code reviews at 2pm | routine.daily.work | work routine |
-| I check emails first thing | routine.daily.communication | communication habit |
-| I write tests before code | routine.coding.testing | coding habit |
-| I always commit frequently | routine.coding.commits | commit habit |
-| I take breaks every hour | routine.daily.breaks | break routine |
-| I plan my week on Sundays | routine.weekly.planning | planning routine |
-| I do retros every sprint | routine.team.retrospectives | team routine |
-| I review PRs in the morning | routine.coding.reviews | review routine |
-
-## settings
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| My terminal font is 14pt | settings.display.fonts | font setting |
-| I use dark mode everywhere | settings.display.theme | theme setting |
-| My editor tab size is 2 | settings.editor.formatting | editor setting |
-| I have auto-save enabled | settings.editor.behavior | editor behavior |
-| My timeout is 30 seconds | settings.system.timeouts | timeout setting |
-| Debug logging is enabled | settings.system.logging | logging setting |
-| I use 2FA for everything | settings.security.authentication | security setting |
-| My default branch is main | settings.git.defaults | git setting |
-| I use SSH for git remotes | settings.git.authentication | git auth setting |
-| My shell prompt shows git | settings.shell.prompt | shell setting |
-
-## system
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| We run on AWS us-east-1 | system.cloud.region | cloud region |
-| Our prod uses 8 CPU cores | system.resources.compute | compute resources |
-| We have 32GB RAM per pod | system.resources.memory | memory config |
-| Storage is on S3 | system.storage.provider | storage config |
-| We use RDS for Postgres | system.database.provider | database config |
-| Redis cluster has 3 nodes | system.cache.configuration | cache config |
-| Load balancer is ALB | system.networking.loadbalancer | networking config |
-| We use VPC peering | system.networking.connectivity | network config |
-| Logs go to CloudWatch | system.observability.logging | logging config |
-| Metrics are in Prometheus | system.observability.metrics | metrics config |
-
-## communication
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| We use Slack for chat | communication.tools.chat | chat tool |
-| Zoom for video calls | communication.tools.video | video tool |
-| GitHub for code hosting | communication.tools.code | code hosting |
-| Notion for documentation | communication.tools.docs | docs tool |
-| Linear for issue tracking | communication.tools.issues | issue tracking |
-| Figma for design specs | communication.tools.design | design tool |
-| We do async code reviews | communication.practices.reviews | review practice |
-| Stand-ups are text-based | communication.practices.standups | standup practice |
-| RFCs for major changes | communication.practices.proposals | proposal practice |
-| ADRs for decisions | communication.practices.decisions | decision practice |
-
-## learning
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| I'm taking a Rust course | learning.courses.programming | programming course |
-| Reading Clean Code book | learning.books.technical | technical book |
-| Watching system design videos | learning.videos.technical | technical videos |
-| Practicing LeetCode daily | learning.practice.algorithms | algorithm practice |
-| Building side projects | learning.practice.projects | project practice |
-| Attending tech meetups | learning.events.meetups | meetup attendance |
-| Following tech newsletters | learning.resources.newsletters | newsletter |
-| Listening to coding podcasts | learning.resources.podcasts | podcast |
-| Reading Hacker News daily | learning.resources.news | tech news |
-| Contributing to OSS weekly | learning.practice.opensource | OSS contribution |
-
-## project
-
-| Input | Path | Reasoning |
-|-------|------|-----------|
-| The sprint ends Friday | project.timeline.sprints | sprint timeline |
-| Launch is next month | project.timeline.milestones | milestone |
-| MVP is 80% complete | project.status.progress | progress status |
-| Blocked on API approval | project.status.blockers | blocker status |
-| High priority bug fix | project.priorities.urgent | priority |
-| Tech debt cleanup needed | project.backlog.technical | technical backlog |
-| Feature request from users | project.backlog.features | feature request |
-| Performance improvements | project.backlog.optimization | optimization task |
-| Security audit required | project.requirements.security | security requirement |
-| Compliance check needed | project.requirements.compliance | compliance requirement |
+| ProllyTree uses merkle-based structural sharing; O(log n) diffs | knowledge.technical.storage | storage internals |
+| code_branch_exists() checks only local refs; remotes are intentionally ignored | knowledge.technical.branching | subtle behavior |
+| The concurrency check warns only on cross-branch shared-store | knowledge.technical.concurrency | safety invariant |
+| memoir-onboard writes ~25 keys per cold pass (burst write risk) | knowledge.technical.onboarding | performance |
+| Stop hook runs one LLM pass over the transcript for auto-capture | knowledge.technical.automation | hook behavior |
+| SessionStart injects codebase:onboard + namespaces summary | knowledge.technical.session | startup flow |
+| Prolly adapter wraps a single VersionedKvStore; no worktree support | knowledge.technical.store | store invariant |
+| Classifier is 3-tier: pattern → LLM → dynamic expansion | knowledge.technical.classifier | pipeline |
+| Prompt caching gives ~90% token savings on Anthropic models | knowledge.technical.performance | perf fact |
+| The auth service retries 429s with exp backoff up to 60s | knowledge.technical.retries | retry policy |
+| Postgres VACUUM blocks under heavy write load during index rebuild | knowledge.technical.database | gotcha |
+| The rate limiter silently drops above 1000 req/s | knowledge.technical.ratelimit | undocumented limit |
+| ADR-012: we chose eventual consistency for session state | knowledge.decisions.architecture | architectural decision |
+| RFC-007: auth was migrated off-session cookies for compliance | knowledge.decisions.security | decision rationale |
 
 ## debugging
 
+Reusable investigation toolkit. Not project-specific bugs (those go in `experience.coding.incidents`).
+
 | Input | Path | Reasoning |
 |-------|------|-----------|
-| Check logs for errors | debugging.techniques.logs | log analysis |
-| Use breakpoints to debug | debugging.techniques.breakpoints | breakpoint debugging |
-| Profile for performance | debugging.techniques.profiling | profiling |
-| Trace request flow | debugging.techniques.tracing | request tracing |
-| Check memory usage | debugging.techniques.memory | memory analysis |
-| Network tab for API calls | debugging.techniques.network | network debugging |
-| Binary search for bugs | debugging.techniques.bisection | git bisect |
-| Reproduce locally first | debugging.practices.reproduction | bug reproduction |
-| Add logging temporarily | debugging.practices.instrumentation | instrumentation |
-| Check recent changes | debugging.practices.investigation | investigation |
+| Grep structured logs before adding more logging | debugging.techniques.logs | log analysis |
+| Reproduce locally with the smallest possible repro | debugging.practices.reproduction | repro |
+| git bisect when a regression sits in history | debugging.techniques.bisection | bisect |
+| py-spy for Python CPU hotspots | debugging.techniques.profiling | profiler |
+| strace / dtrace for syscall-level visibility | debugging.techniques.tracing | tracing |
+| Add temporary DEBUG logging around the suspect path | debugging.practices.instrumentation | instrumentation |
+| Check the most recent commits touching the affected file | debugging.practices.investigation | recency check |
+| breakpoint() / pdb for interactive inspection | debugging.techniques.breakpoints | interactive debug |
+| tracemalloc / heaptrack for memory leaks | debugging.techniques.memory | memory |
+| DevTools Network tab for API round-trip issues | debugging.techniques.network | network |
+| Binary-search the Node version to isolate engine bugs | debugging.techniques.bisection | version bisect |
+| Diff the failing test's output against a known-good run | debugging.practices.comparison | diff strategy |
+| Check for concurrency: run with single worker first | debugging.practices.isolation | narrow scope |
+| Clear caches before re-running the failing test | debugging.practices.cleanslate | reset state |
+
+## project
+
+Current-state task management. Distinguish from `context.project.*` (facts about the project itself).
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Sprint ends Friday, demo Monday | project.timeline.sprints | sprint cadence |
+| v1.0 launch next month | project.timeline.milestones | milestone |
+| MVP 80% complete, on track | project.status.progress | progress |
+| Blocked on auth team's API sign-off | project.status.blockers | blocker |
+| Tech debt: type annotations, CLI types, SDK tests | project.backlog.technical | tech debt |
+| Feature requests: batch embedding, streaming recall | project.backlog.features | feature backlog |
+| Known bugs: concurrency warning on worktrees | project.backlog.bugs | bug backlog |
+| Performance backlog: reduce onboard cold-path latency | project.backlog.optimization | perf backlog |
+| Top priority this week: fix staleness detector | project.priorities.urgent | priority |
+| Security audit required before GA | project.requirements.security | requirement |
+| SOC2 compliance check before Q3 | project.requirements.compliance | compliance |
+| Shipping cryptographic proofs in v1 | project.requirements.features | feature requirement |
+
+## experience
+
+Past events that shape future decisions. Not reusable techniques (those go in `debugging`) or current-state facts (those go in `project.status.*`).
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Debugged a 3-day race condition in the scheduler | experience.coding.debugging | debug story |
+| Migrated from SQLite to Postgres last quarter | experience.projects.migrations | migration |
+| Led the Python 3.7 → 3.10 upgrade across services | experience.projects.migrations | upgrade |
+| 2024 outage root cause: DNS failover misconfig | experience.incidents.postmortem | post-mortem |
+| Added feature flags after the rollback incident | experience.coding.incidents | incident fix |
+| Refactored auth after the token leak | experience.coding.refactors | refactor |
+| Shipped the billing rewrite Q1 2025 | experience.projects.launches | launch |
+| Mentored three junior engineers through TDD | experience.professional.mentoring | mentoring |
+| Spoke at PyCon about async patterns | experience.professional.speaking | talk |
+| Wrote the API docs for v0.3 | experience.projects.documentation | docs work |
+| Designed the payment-gateway integration | experience.projects.design | design work |
+| Lesson: never ship migrations on Friday | experience.lessons.operations | ops lesson |
+| Lesson: integration tests must hit a real DB | experience.lessons.testing | testing lesson |
+
+## entity
+
+Specific named mentions. Code entities dominate for coding agents.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| src/memoir/cli/main.py is the CLI entry | entity.code.files | file |
+| The memoir-ai package on PyPI | entity.code.repositories | repo |
+| ProllyTreeStore class in prolly_adapter.py | entity.code.classes | class |
+| classify_async() on IntelligentClassifier | entity.code.functions | function |
+| The /api/store endpoint on the UI server | entity.code.endpoints | endpoint |
+| The User model in models.py | entity.code.models | model |
+| UserService handles auth | entity.code.services | service |
+| utils.py module exports shared helpers | entity.code.modules | module |
+| CI failed at the lint step | entity.events.failures | CI failure |
+| Deploy scheduled for 5pm Friday | entity.events.deployments | deploy event |
+| Architecture review meeting tomorrow 3pm | entity.events.meetings | meeting |
+| Alice from the platform team | entity.people.colleagues | colleague |
+| I visited the Tokyo office last spring | entity.places.cities | place |
+| I work at Acme Corp | entity.organizations.companies | org |
+
+## settings
+
+Local environment configuration.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Editor tab size 4 spaces, no tabs | settings.editor.formatting | editor format |
+| Vim keybindings active in VS Code | settings.editor.keybindings | keybinds |
+| Auto-save every 1 second | settings.editor.behavior | auto-save |
+| Default git branch is main, force-push disabled | settings.git.defaults | git default |
+| SSH only for git remotes; HTTPS blocked | settings.git.authentication | git auth |
+| Zsh with p10k prompt showing git state | settings.shell.prompt | shell prompt |
+| Hardware 2FA key required for all logins | settings.security.authentication | 2FA |
+| Log level DEBUG in dev, INFO in staging, WARN in prod | settings.system.logging | log level |
+| Request timeout 30s, connect timeout 5s | settings.system.timeouts | timeouts |
+| Terminal font JetBrains Mono 14pt | settings.display.fonts | font |
+| Dark theme everywhere | settings.display.theme | theme |
+
+## system
+
+Live runtime/infrastructure facts. Distinguish from `context.project.infrastructure` (intent) — `system` is reality.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Prod runs in AWS us-east-1 across 3 AZs | system.cloud.region | region |
+| 8 vCPU / 32GB RAM per Lambda container | system.resources.compute | compute |
+| 64GB RAM headroom per DB replica | system.resources.memory | memory |
+| Storage on S3 with versioning enabled | system.storage.provider | storage |
+| RDS Postgres 15 multi-AZ, read replicas in us-west-2 | system.database.provider | database |
+| Redis cluster: 3 primary + 3 replica, 16GB each | system.cache.configuration | cache config |
+| ALB → ECS Fargate, WAF in front | system.networking.loadbalancer | LB |
+| VPC peering to analytics + ops accounts | system.networking.connectivity | network |
+| Logs → CloudWatch → S3 archive after 30d | system.observability.logging | logging pipeline |
+| Metrics in Prometheus, alerts → PagerDuty | system.observability.metrics | metrics |
+| Distributed tracing via OpenTelemetry → Jaeger | system.observability.tracing | tracing |
+
+## routine
+
+Habits (recurring by choice/rhythm), distinct from `workflow` (rules by decree).
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| I write failing tests first, then implement | routine.coding.testing | test-first habit |
+| I commit every working state, squash before merge | routine.coding.commits | commit habit |
+| Review PRs in the morning before new work | routine.coding.reviews | review rhythm |
+| Run the full test suite every hour of focused work | routine.coding.testing | test cadence |
+| Daily standup 10am PST | routine.team.standups | standup |
+| Sprint retro every other Friday | routine.team.retrospectives | retro |
+| Weekly planning session on Sunday evening | routine.weekly.planning | planning |
+| Take a break every hour (20-20-20) | routine.daily.breaks | break |
+
+## communication
+
+Collaboration practices, not casual chat logistics.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| PR reviews happen async in GitHub | communication.practices.reviews | review style |
+| Major changes require an RFC in the wiki | communication.practices.proposals | RFC |
+| ADRs live in docs/decisions/ | communication.practices.decisions | ADR |
+| Standups text-only in the #standup Slack channel | communication.practices.standups | standup mode |
+| Design discussions in Slack #arch | communication.tools.chat | chat channel |
+| Issue tracking in Linear, not GitHub Projects | communication.tools.issues | issue tool |
+| Figma for design specs | communication.tools.design | design tool |
+| Notion for long-form docs | communication.tools.docs | doc tool |
+
+## profile
+
+User identity as it informs agent behavior. Personal fields `[general]`.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| I'm a senior backend engineer at Acme | profile.professional.occupation | role |
+| I mainly write Go and TypeScript | profile.professional.skills | primary stacks |
+| I specialize in distributed systems | profile.professional.specialization | focus |
+| 10 years of industry experience | profile.professional.experience | seniority |
+| I'm in the PST timezone | profile.personal.location | timezone |
+| My name is Sarah | profile.personal.identity | identity |
+| I graduated from Stanford CS | profile.professional.education | education |
+
+## goals
+
+Personal career/learning intentions. For project-scoped goals, prefer `context.project.goals`.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| I want to become a staff engineer | goals.career.advancement | career |
+| Learning Rust for systems work | goals.education.languages | language goal |
+| AWS Solutions Architect cert by end of year | goals.education.certifications | cert goal |
+| I plan to contribute to one OSS project per quarter | goals.personal.opensource | OSS goal |
+| Aim to give a talk at a major conf next year | goals.career.speaking | speaking |
+| Save for a house downpayment | goals.financial.savings | financial |
+
+## topics
+
+Opinion/stance on debates. De-emphasized for agents — prefer `workflow` / `context` / `knowledge` for actionable facts.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Event sourcing has real trade-offs at scale | topics.architecture.patterns | pattern stance |
+| Microservices aren't free; monolith-first is fine | topics.architecture.patterns | architecture stance |
+| TypeScript improves refactor safety meaningfully | topics.coding.languages | language stance |
+| GitOps simplifies prod operations | topics.devops.practices | practice stance |
+| Observability is not optional for distributed systems | topics.devops.observability | stance |
+
+## learning
+
+Education resources being consumed. `[general]`.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Reading "Designing Data-Intensive Applications" | learning.books.technical | tech book |
+| Taking the Kubernetes CKA course | learning.courses.programming | course |
+| Watching system design videos on YouTube | learning.videos.technical | video |
+| Contributing to langchain weekly | learning.practice.opensource | OSS practice |
+
+## relationships
+
+People connections. De-emphasized for coding agents — team ownership facts belong in `context.team.roles`.
+
+| Input | Path | Reasoning |
+|-------|------|-----------|
+| Alice is my manager | relationships.professional.manager | manager |
+| Bob mentored me through the auth rewrite | relationships.professional.mentors | mentor |
+| My sister lives in NYC | relationships.family.siblings | family |
