@@ -48,12 +48,13 @@ BRANCH=$(_json_val "$STATUS_JSON" "branch" "main")
 TOTAL_MEMORIES=$(_json_val "$STATUS_JSON" "memory_count" "0")
 
 # Compute *user-facing* memory count by subtracting entries in memoir's
-# internal taxonomy:v1:* namespaces. A brand-new store created with
-# `--taxonomy-builtin` has ~8 taxonomy entries that are classification
-# hints, not user memories; showing them in the status line as "8 memories"
-# confuses users who expect that number to reflect what they've captured.
+# internal scaffolding namespaces — `taxonomy:v1:*` (classification hints
+# installed by `memoir new --taxonomy-builtin`) and `codebase:onboard`
+# (agent-generated repo snapshot written by /memoir-onboard). Both are
+# machinery, not user captures; counting them inflates the status-line
+# number away from what the user has actually remembered.
 # `summarize taxonomy --json` returns a per-namespace count map; we sum the
-# non-taxonomy entries. Quick read, no LLM call, safe to run every session.
+# remaining entries. Quick read, no LLM call, safe to run every session.
 SUMMARY_JSON=$(memoir_json summarize taxonomy 2>/dev/null || true)
 USER_MEMORIES="$TOTAL_MEMORIES"
 if [ -n "$SUMMARY_JSON" ]; then
@@ -62,7 +63,7 @@ import json, sys
 try:
     obj = json.loads(sys.argv[1])
     ns = obj.get('namespaces', {}) or {}
-    print(sum(v for k, v in ns.items() if not k.startswith('taxonomy:')))
+    print(sum(v for k, v in ns.items() if not k.startswith('taxonomy:') and k != 'codebase:onboard'))
 except Exception:
     print(sys.argv[2])
 " "$SUMMARY_JSON" "$TOTAL_MEMORIES" 2>/dev/null || echo "$TOTAL_MEMORIES")
@@ -120,7 +121,9 @@ fi
 
 # Inject a short taxonomy snapshot as additionalContext so Claude sees what
 # kinds of memories exist without having to invoke the recall skill up front.
-# Reuses SUMMARY_JSON fetched above; filters the same taxonomy:v1:* noise.
+# Reuses SUMMARY_JSON fetched above; filters the same scaffolding namespaces
+# as the count above (taxonomy:v1:* + codebase:onboard) so the listed
+# namespaces sum to the number rendered in the status line.
 context=""
 if [ "$USER_MEMORIES" != "0" ] && [ -n "$SUMMARY_JSON" ]; then
   ns_list=$(python3 -c "
@@ -128,7 +131,7 @@ import json, sys
 try:
     obj = json.loads(sys.argv[1])
     ns = obj.get('namespaces', {}) or {}
-    user_ns = {k: v for k, v in ns.items() if not k.startswith('taxonomy:')}
+    user_ns = {k: v for k, v in ns.items() if not k.startswith('taxonomy:') and k != 'codebase:onboard'}
     if not user_ns:
         sys.exit(0)
     lines = [f'- {k}: {v} memor' + ('y' if v == 1 else 'ies') for k, v in sorted(user_ns.items())]
@@ -155,6 +158,30 @@ if [ -n "$unmerged" ]; then
     context="${context}"$'\n\n'"${unmerged_block}"
   else
     context="$unmerged_block"
+  fi
+fi
+
+# Inject the codebase:onboard snapshot so fresh sessions start with a high-level
+# map of the repo (structure, goals, rules, lessons). Gated on
+# MEMOIR_ONBOARD_INJECT (default=1) so a user who finds the block noisy can
+# opt out with MEMOIR_ONBOARD_INJECT=0. If the namespace is empty, emit a
+# one-line hint nudging the user to populate it via /memoir-onboard.
+if [ "${MEMOIR_ONBOARD_INJECT:-1}" = "1" ]; then
+  onboard_block=$(render_codebase_onboard_compact 2>/dev/null || true)
+  if [ -z "$onboard_block" ]; then
+    # No snapshot yet — only surface the hint if some user memories already
+    # exist (brand-new store gets no extra noise on first launch).
+    if [ "$USER_MEMORIES" != "0" ]; then
+      onboard_block="# codebase:onboard snapshot"$'\n'
+      onboard_block+="(none yet — run /memoir-onboard to generate one; future sessions will auto-inject it here)"
+    fi
+  fi
+  if [ -n "$onboard_block" ]; then
+    if [ -n "$context" ]; then
+      context="${context}"$'\n\n'"${onboard_block}"
+    else
+      context="$onboard_block"
+    fi
   fi
 fi
 
