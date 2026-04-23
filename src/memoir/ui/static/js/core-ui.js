@@ -44,8 +44,12 @@
                 cmd = aliases[cmd];
             }
 
-
-
+            // Enforce CLI-supplied feature flags (readonly / usellm). The
+            // guard shows a notification and returns false for blocked cmds;
+            // everything below here only runs when the command is allowed.
+            if (window.memoirConfig && !window.memoirConfig.guardCommand(cmd)) {
+                return;
+            }
 
             if (cmd === '/connect') {
                 const path = parts.slice(1).join(' ');
@@ -312,7 +316,16 @@
                     }
                 } else {
                     // Input doesn't start with "/" - treat it as a natural language query
-                    // Default to recall functionality
+                    // (routed through /recall, which needs an LLM).
+                    if (window.memoirConfig && !window.memoirConfig.useLlm) {
+                        showNotification(
+                            'Free-text queries need an LLM — relaunch with '
+                            + "'memoir ui <path> --usellm' to enable, or use a "
+                            + 'slash command like /commits, /blame, /help.',
+                            'warning'
+                        );
+                        return;
+                    }
 
                     let query, person;
                     const input = command.trim();
@@ -2515,6 +2528,13 @@ ${result.valid ?
         }
 
         async function summarizeMemoryStore(summaryType = 'all') {
+            // Defense in depth: every caller of this function ultimately
+            // hits /api/summarize which requires an LLM. Refuse under
+            // --no-usellm so we never surface opaque server errors like
+            // "Failed to fetch" to the user.
+            if (window.memoirConfig && !window.memoirConfig.guardCommand('/summarize')) {
+                return;
+            }
             if (!connectedStorePath) {
                 showNotification('Please connect to a memory store first', 'error');
                 return;
@@ -4557,17 +4577,77 @@ ${result.valid ?
             let nodeNamespace = 'default';
             let fullPath = nodeData.id;
 
+            // The DOM-derived path (nodeData.id) is namespace-prefixed, e.g.
+            // "default:codebase.onboard" or "default.user.preferences".
+            // Split it against the known namespaces (longest-prefix wins so
+            // "default:codebase" is matched before "default").
+            const knownNamespaces = window.realStoreData && window.realStoreData.namespaces
+                ? Object.keys(window.realStoreData.namespaces).sort((a, b) => b.length - a.length)
+                : [];
+            let queryNamespace = null;
+            let queryKey = null;
+            for (const ns of knownNamespaces) {
+                if (nodeData.id === ns) {
+                    queryNamespace = ns;
+                    queryKey = '';
+                    break;
+                }
+                if (nodeData.id.startsWith(ns + '.')) {
+                    queryNamespace = ns;
+                    queryKey = nodeData.id.slice(ns.length + 1);
+                    break;
+                }
+            }
+
+            // Helper: a memory's real content may live at memory.value.content
+            // (the store wraps scalars in { content, namespace, key, ... })
+            // or directly at memory.content for older payloads.
+            const extractContent = (m) => {
+                if (!m) return '';
+                if (m.value && typeof m.value === 'object' && 'content' in m.value) {
+                    return m.value.content || '';
+                }
+                if (typeof m.value === 'string') return m.value;
+                return m.content || '';
+            };
+
             // Try to find the node in the current data
             if (window.realStoreData && window.realStoreData.memories) {
-                // Look through memories to find this path
                 for (const memory of window.realStoreData.memories) {
-                    if (memory.path === nodeData.id) {
+                    const matches = queryNamespace !== null
+                        ? (memory.namespace === queryNamespace && memory.path === queryKey)
+                        : memory.path === nodeData.id;
+                    if (matches) {
                         nodeInfo = memory;
-                        nodeContent = memory.content || '';
+                        nodeContent = extractContent(memory);
                         nodeNamespace = memory.namespace || 'default';
                         fullPath = `${nodeNamespace}:${memory.path}`;
                         break;
                     }
+                }
+            }
+
+            // Folder view: no exact memory at this path, but descendants
+            // exist. Gather the sub-keys so the popup can list them instead
+            // of showing "No content stored".
+            let folderChildren = [];
+            if (!nodeInfo && queryNamespace !== null && window.realStoreData && window.realStoreData.memories) {
+                const prefix = queryKey ? queryKey + '.' : '';
+                for (const memory of window.realStoreData.memories) {
+                    if (memory.namespace !== queryNamespace) continue;
+                    if (!queryKey || memory.path.startsWith(prefix)) {
+                        folderChildren.push({
+                            key: memory.path,
+                            content: extractContent(memory),
+                        });
+                    }
+                }
+                folderChildren.sort((a, b) => a.key.localeCompare(b.key));
+                if (folderChildren.length > 0) {
+                    nodeNamespace = queryNamespace;
+                    fullPath = queryKey
+                        ? `${queryNamespace}:${queryKey}`
+                        : queryNamespace;
                 }
             }
 
@@ -4609,11 +4689,20 @@ ${result.valid ?
                         </div>
                         <div class="node-content-section">
                             <div class="node-content-header">
-                                <span class="node-content-label">CONTENT:</span>
+                                <span class="node-content-label">${folderChildren.length > 0 && !nodeContent ? `CONTAINS ${folderChildren.length} MEMORIES:` : 'CONTENT:'}</span>
                                 ${nodeContent ? `<button class="copy-btn" onclick="copyToClipboard(\`${nodeContent.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`, this)" title="Copy content">Copy</button>` : ''}
                             </div>
                             ${nodeContent ? `
                                 <div class="node-content-text">${escapeHtml(nodeContent)}</div>
+                            ` : folderChildren.length > 0 ? `
+                                <div class="node-folder-list">
+                                    ${folderChildren.map(c => `
+                                        <div class="node-folder-row">
+                                            <div class="node-folder-key">${escapeHtml(c.key)}</div>
+                                            <div class="node-folder-preview">${escapeHtml((c.content || '').slice(0, 160))}${c.content && c.content.length > 160 ? '…' : ''}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
                             ` : `
                                 <div class="node-no-content">
                                     <span class="no-content-text">No content stored for this path</span>
@@ -4631,9 +4720,24 @@ ${result.valid ?
                             </div>
                         </div>
                         <div class="node-actions-section">
-                            <button class="node-summarize-btn" onclick="summarizeNodePath('${fullPath.replace(/'/g, "\\'")}')">
-                                📋 Summarize Keys
-                            </button>
+                            ${(() => {
+                                const block = window.memoirConfig
+                                    ? window.memoirConfig.isCommandBlocked('/summarize')
+                                    : null;
+                                if (block) {
+                                    const attr = window.memoirConfig.escapeAttr(block.message);
+                                    return `<button class="node-summarize-btn" disabled
+                                            data-block-msg="${attr}"
+                                            onclick="window.memoirConfig.notifyFromData(this)"
+                                            style="opacity:0.4;cursor:not-allowed;"
+                                            title="${attr}">
+                                        📋 Summarize Keys <span style="margin-left:6px;color:#a78bfa;font-size:9px;font-weight:700;">🔒 ${block.label}</span>
+                                    </button>`;
+                                }
+                                return `<button class="node-summarize-btn" onclick="summarizeNodePath('${fullPath.replace(/'/g, "\\'")}')">
+                                    📋 Summarize Keys
+                                </button>`;
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -4776,6 +4880,38 @@ ${result.valid ?
                     .no-content-text {
                         color: var(--text-secondary);
                         font-style: italic;
+                    }
+
+                    .node-folder-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        max-height: 320px;
+                        overflow-y: auto;
+                        padding: 4px 0;
+                    }
+
+                    .node-folder-row {
+                        padding: 10px 12px;
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 8px;
+                        border-left: 3px solid var(--accent-primary);
+                    }
+
+                    .node-folder-key {
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 12px;
+                        color: var(--accent-primary);
+                        margin-bottom: 4px;
+                        font-weight: 600;
+                    }
+
+                    .node-folder-preview {
+                        font-size: 13px;
+                        color: var(--text-secondary);
+                        line-height: 1.5;
+                        white-space: normal;
+                        word-break: break-word;
                     }
 
                     .node-meta-section {
@@ -5684,8 +5820,13 @@ ${result.valid ?
             const treeView = document.getElementById('treeView');
             if (!treeView) return;
 
-            // If we have a tree structure, use it
-            if (data.tree && Object.keys(data.tree).length > 0) {
+            // Preferred: build from the per-namespace key lists the backend
+            // returns. This keeps each namespace (default, default:codebase,
+            // memory:general, ...) as its own top-level group instead of
+            // collapsing everything into a single "taxonomy" bucket.
+            if (data.namespaces && Object.keys(data.namespaces).length > 0) {
+                treeView.innerHTML = buildTreeFromNamespaces(data.namespaces);
+            } else if (data.tree && Object.keys(data.tree).length > 0) {
 
                 treeView.innerHTML = buildTreeFromPaths(data.tree);
             } else if (data.memories && data.memories.length > 0) {
@@ -5746,6 +5887,21 @@ ${result.valid ?
         }
 
         function buildTreeFromPaths(pathCount) {
+            // Data view caps total path entries at 500. Shallow paths win ties
+            // so the top of the hierarchy always renders.
+            const TREE_KEY_LIMIT = 500;
+            const allKeys = Object.keys(pathCount);
+            if (allKeys.length > TREE_KEY_LIMIT) {
+                const kept = allKeys
+                    .sort((a, b) => {
+                        const la = a.split('.').length;
+                        const lb = b.split('.').length;
+                        return la !== lb ? la - lb : a.localeCompare(b);
+                    })
+                    .slice(0, TREE_KEY_LIMIT);
+                pathCount = Object.fromEntries(kept.map(k => [k, pathCount[k]]));
+            }
+
             const tree = {};
 
             // Create organized structure with memento and taxonomy folders
@@ -5832,6 +5988,107 @@ ${result.valid ?
             return result || '<div class="tree-node"><div class="node-content"><span class="node-icon">📁</span><span class="node-label">No memory paths found</span></div></div>';
         }
 
+        // Build the tree view from the per-namespace key lists returned by
+        // the backend (/api/store -> data.namespaces). Each namespace (e.g.
+        // "default", "default:codebase", "memory:general") becomes a
+        // top-level node whose children are its keys split on `.`.
+        //
+        // Each node tracks two counts:
+        //   ownCount     — memories whose exact key ends at this node
+        //                  (used for the `has-memories` class → click target)
+        //   subtreeCount — memories anywhere in this subtree
+        //                  (used for the numeric badge, so folders show
+        //                  rolled-up totals)
+        function buildTreeFromNamespaces(namespaces) {
+            // Data view caps total keys across all namespaces at 500 to keep
+            // large stores navigable. `default` is drawn first (sort order
+            // below), so if the cap bites it takes keys from other namespaces.
+            const TREE_KEY_LIMIT = 500;
+            const makeNode = () => ({ children: {}, ownCount: 0, subtreeCount: 0 });
+            const tree = {};
+
+            const namespaceNames = Object.keys(namespaces).sort((a, b) => {
+                // Show "default" first, then anything else alphabetically.
+                if (a === 'default') return -1;
+                if (b === 'default') return 1;
+                return a.localeCompare(b);
+            });
+
+            let remaining = TREE_KEY_LIMIT;
+            namespaceNames.forEach(ns => {
+                if (remaining <= 0) return;
+                let keys = namespaces[ns] || [];
+                if (keys.length > remaining) keys = keys.slice(0, remaining);
+                if (keys.length === 0) return;
+                remaining -= keys.length;
+
+                const root = makeNode();
+
+                keys.forEach(key => {
+                    const parts = String(key).split('.');
+                    let cursor = root;
+                    // Every ancestor (including the namespace root) picks up
+                    // this memory in its subtreeCount.
+                    root.subtreeCount += 1;
+                    parts.forEach((part, idx) => {
+                        if (!cursor.children[part]) {
+                            cursor.children[part] = makeNode();
+                        }
+                        cursor = cursor.children[part];
+                        cursor.subtreeCount += 1;
+                        if (idx === parts.length - 1) {
+                            cursor.ownCount += 1;
+                        }
+                    });
+                });
+
+                tree[ns] = root;
+            });
+
+            function renderNode(name, node, level = 0) {
+                const hasOwnMemory = node.ownCount > 0;
+                const hasChildren = Object.keys(node.children).length > 0;
+                const isLeafNode = hasOwnMemory && !hasChildren;
+                const icon = getIconForPath(name, level, isLeafNode);
+                const foldIcon = hasChildren ? '▼' : '';
+                const badge = node.subtreeCount > 0
+                    ? `<span class="memory-count">${node.subtreeCount}</span>`
+                    : '';
+                // Any node that covers at least one memory (its own or in
+                // its subtree) gets `has-memories` so the click handler
+                // opens the details popup. The popup itself decides whether
+                // to render content (leaf) or a descendant list (folder).
+                const isClickable = node.subtreeCount > 0;
+
+                let html = `
+                    <div class="tree-node ${hasChildren ? 'has-children' : ''}">
+                        <div class="node-content">
+                            ${hasChildren ? `<span class="fold-indicator" onclick="toggleFold(event)">${foldIcon}</span>` : '<span class="fold-spacer"></span>'}
+                            <span class="node-icon">${icon}</span>
+                            <span class="node-label ${isClickable ? 'has-memories' : ''}">${name}</span>
+                            ${badge}
+                        </div>
+                `;
+
+                if (hasChildren) {
+                    html += '<div class="node-children">';
+                    Object.entries(node.children).forEach(([childName, childNode]) => {
+                        html += renderNode(childName, childNode, level + 1);
+                    });
+                    html += '</div>';
+                }
+
+                html += '</div>';
+                return html;
+            }
+
+            let result = '';
+            Object.entries(tree).forEach(([name, node]) => {
+                result += renderNode(name, node);
+            });
+            return result || '<div class="tree-node"><div class="node-content"><span class="node-icon">📁</span><span class="node-label">No memories in any namespace</span></div></div>';
+        }
+
         function toggleFold(event) {
             event.stopPropagation(); // Prevent triggering node click events
 
@@ -5875,22 +6132,39 @@ ${result.valid ?
             const links = [];
             const nodeMap = new Map();
 
-            // Process memories or tree data
+            // Graph view restricts to the `default` namespace and caps total path
+            // nodes at 200. `data.tree` is aggregated across namespaces server-side,
+            // so we rebuild from `data.memories` (which carries per-item namespace)
+            // and only fall back to the aggregated tree when memories are absent.
+            const GRAPH_NAMESPACE = 'default';
+            const GRAPH_KEY_LIMIT = 200;
+
             let pathCount = {};
-            if (data.tree && Object.keys(data.tree).length > 0) {
-                pathCount = data.tree;
-            } else if (data.memories && data.memories.length > 0) {
+            if (data.memories && data.memories.length > 0) {
                 data.memories.forEach(memory => {
-                    if (memory.path) {
-                        const parts = memory.path.split('.');
-                        let currentPath = '';
-                        parts.forEach(part => {
-                            currentPath = currentPath ? currentPath + '.' + part : part;
-                            pathCount[currentPath] = (pathCount[currentPath] || 0) + 1;
-                        });
-                    }
+                    if ((memory.namespace || 'default') !== GRAPH_NAMESPACE) return;
+                    if (!memory.path) return;
+                    const parts = memory.path.split('.');
+                    let currentPath = '';
+                    parts.forEach(part => {
+                        currentPath = currentPath ? currentPath + '.' + part : part;
+                        pathCount[currentPath] = (pathCount[currentPath] || 0) + 1;
+                    });
                 });
+            } else if (data.tree && Object.keys(data.tree).length > 0) {
+                pathCount = { ...data.tree };
             }
+
+            // Only levels 0–2 render; sort shallow-first then alphabetical, then cap.
+            const kept = Object.keys(pathCount)
+                .filter(k => (k.split('.').length - 1) <= 2)
+                .sort((a, b) => {
+                    const la = a.split('.').length;
+                    const lb = b.split('.').length;
+                    return la !== lb ? la - lb : a.localeCompare(b);
+                })
+                .slice(0, GRAPH_KEY_LIMIT);
+            pathCount = Object.fromEntries(kept.map(k => [k, pathCount[k]]));
 
             // Create nodes from paths - limit to 3 levels deep for cleaner visualization
             Object.keys(pathCount).forEach(path => {
@@ -6807,7 +7081,18 @@ ${result.valid ?
                             hideCommandSuggestions();
                             input.value = '';
                         } else {
-                            selectCommand(selectedCmd.cmd, selectedCmd.args);
+                            // If the selected command is blocked by readonly/usellm,
+                            // notify and don't populate the input.
+                            const block = window.memoirConfig
+                                ? window.memoirConfig.isCommandBlocked(selectedCmd.cmd)
+                                : null;
+                            if (block) {
+                                window.memoirConfig.notify(block.message);
+                                hideCommandSuggestions();
+                                input.value = '';
+                            } else {
+                                selectCommand(selectedCmd.cmd, selectedCmd.args);
+                            }
                         }
                         return;
                     }
@@ -7111,7 +7396,7 @@ ${result.valid ?
 
             const query = input.toLowerCase();
             const matchingCommands = availableCommands.filter(cmd =>
-                cmd.cmd.startsWith(query) || query === '/'
+                !cmd.placeholder && (cmd.cmd.startsWith(query) || query === '/')
             );
 
             if (matchingCommands.length === 0) {
@@ -7121,14 +7406,41 @@ ${result.valid ?
 
             suggestions.innerHTML = matchingCommands.map((cmd, index) => {
                 const isPlaceholder = cmd.placeholder;
-                const commandColor = isPlaceholder ? '#6b7280' : '#22d3ee';
-                const descColor = isPlaceholder ? '#6b7280' : '#94a3b8';
-                const hoverBg = isPlaceholder ? 'rgba(107, 114, 128, 0.1)' : 'rgba(99, 102, 241, 0.1)';
-                const cursor = isPlaceholder ? 'not-allowed' : 'pointer';
-                const clickHandler = isPlaceholder ? `showNotification('${cmd.cmd} - ${cmd.desc}', 'info', 3000)` : `selectCommand('${cmd.cmd}', '${cmd.args}')`;
+                const block = !isPlaceholder && window.memoirConfig
+                    ? window.memoirConfig.isCommandBlocked(cmd.cmd)
+                    : null;
+                const isBlocked = !!block;
+                const dimmed = isPlaceholder || isBlocked;
+
+                const commandColor = dimmed ? '#6b7280' : '#22d3ee';
+                const descColor = dimmed ? '#6b7280' : '#94a3b8';
+                const hoverBg = dimmed ? 'rgba(107, 114, 128, 0.1)' : 'rgba(99, 102, 241, 0.1)';
+                const cursor = dimmed ? 'not-allowed' : 'pointer';
+
+                let clickHandler;
+                let dataAttrs = '';
+                if (isPlaceholder) {
+                    clickHandler = `showNotification('${cmd.cmd} - ${cmd.desc}', 'info', 3000)`;
+                } else if (isBlocked) {
+                    // Store the notify message in a data attribute — embedding
+                    // it directly in onclick="..." breaks when the message
+                    // contains quotes or `<`/`>` characters.
+                    clickHandler = 'window.memoirConfig && window.memoirConfig.notifyFromData(this)';
+                    dataAttrs = ` data-block-msg="${window.memoirConfig.escapeAttr(block.message)}"`;
+                } else {
+                    clickHandler = `selectCommand('${cmd.cmd}', '${cmd.args}')`;
+                }
+
+                let badge = '';
+                if (isPlaceholder) {
+                    badge = ' <span style="color: #f59e0b; font-size: 10px;">⚡ SOON</span>';
+                } else if (isBlocked) {
+                    const color = block.reason === 'readonly' ? '#f87171' : '#a78bfa';
+                    badge = ` <span style="color: ${color}; font-size: 10px; font-weight: 700;">🔒 ${block.label}</span>`;
+                }
 
                 return `
-                <div class="command-suggestion" data-index="${index}" style="
+                <div class="command-suggestion" data-index="${index}" data-blocked="${isBlocked ? '1' : '0'}"${dataAttrs} style="
                     padding: 12px 16px;
                     cursor: ${cursor};
                     border-bottom: 1px solid rgba(71, 85, 105, 0.2);
@@ -7136,14 +7448,14 @@ ${result.valid ?
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    ${isPlaceholder ? 'opacity: 0.7;' : ''}
+                    ${dimmed ? 'opacity: 0.55;' : ''}
                 " onmouseover="this.style.background='${hoverBg}'"
                    onmouseout="this.style.background='transparent'"
                    onclick="${clickHandler}">
                     <div>
                         <div style="color: ${commandColor}; font-family: 'JetBrains Mono', monospace; font-weight: 600;">
                             ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
-                            ${isPlaceholder ? ' <span style="color: #f59e0b; font-size: 10px;">⚡ SOON</span>' : ''}
+                            ${badge}
                         </div>
                         <div style="color: ${descColor}; font-size: 12px; margin-top: 2px;">
                             ${cmd.desc}
@@ -7342,6 +7654,9 @@ No commit history found for this key.
 
         // Time-travel functionality
         async function timeTravel(target) {
+            if (window.memoirConfig && !window.memoirConfig.guardCommand('/time-travel')) {
+                return;
+            }
             if (!connectedStorePath) {
                 showNotification('Please connect to a store first with /connect <path>', 'error');
                 return;
@@ -7503,6 +7818,12 @@ No commit history found for this key.
         }
 
         async function checkoutBranch(branchName) {
+            // Defense in depth: if the UI is in readonly mode, refuse even
+            // if a code path (e.g. the branch dropdown's change event) made
+            // it past the DOM guard.
+            if (window.memoirConfig && !window.memoirConfig.guardCommand('/checkout')) {
+                return;
+            }
             try {
                 const response = await fetch('/api/checkout', {
                     method: 'POST',
@@ -7682,6 +8003,18 @@ No commit history found for this key.
             }
         }
 
+        // --- Commit hover popover state ---------------------------------
+        // Ordered commits (newest-first) for the currently rendered git
+        // history panel. Used to look up a commit's parent hash for the
+        // hover diff call without a second API roundtrip.
+        let __commitHashOrder = [];
+        // commit-hash -> { stats, changes } | { error: "..." }
+        const __commitDiffCache = new Map();
+        let __commitHoverTimer = null;
+        let __commitHoverAbort = null;
+        let __commitHoverNode = null;  // the <div.commit-node> currently hovered
+        const COMMIT_HOVER_DELAY_MS = 250;
+
         async function updateGitHistory() {
             if (!connectedStorePath) return;
 
@@ -7739,16 +8072,267 @@ No commit history found for this key.
                     `;
                 });
 
+                // A re-render drops the old .commit-node listeners with
+                // the old DOM; also dispose any popover still attached to
+                // a now-stale node.
+                cancelCommitHoverPopover();
+
                 gitTreeElement.innerHTML = historyHTML;
+
+                // Remember commit order for the hover-popover parent lookup.
+                __commitHashOrder = data.commits.map(c => c.hash);
 
                 // Add menu button handlers
                 initializeCommitMenus();
+
+                // Wire hover popovers for each commit node.
+                attachCommitHoverHandlers(gitTreeElement);
 
             } catch (error) {
                 console.error('Failed to update git history:', error);
                 // Keep existing history on error
             }
         }
+
+        function attachCommitHoverHandlers(gitTreeElement) {
+            gitTreeElement.querySelectorAll('.commit-node').forEach(node => {
+                const hash = node.dataset.commit;
+                if (!hash) return;
+                node.style.cursor = 'pointer';
+                node.addEventListener('mouseenter', () => scheduleCommitHoverPopover(node, hash));
+                node.addEventListener('mouseleave', () => cancelCommitHoverPopover());
+                node.addEventListener('click', (e) => {
+                    // The ⋯ menu button has its own handler — don't double-fire.
+                    // Same for the floating context menu that pops out from it.
+                    if (e.target.closest('.commit-menu-btn')) return;
+                    if (e.target.closest('.commit-context-menu')) return;
+                    cancelCommitHoverPopover();
+                    showCommitDiff(hash);
+                });
+            });
+        }
+
+        function scheduleCommitHoverPopover(node, hash) {
+            // If hovering the same node that's already pending/showing, no-op.
+            if (__commitHoverNode === node) return;
+            // Switching nodes fast: cancel prior pending work + popover.
+            cancelCommitHoverPopover();
+            __commitHoverNode = node;
+            __commitHoverTimer = setTimeout(() => {
+                __commitHoverTimer = null;
+                showCommitHoverPopover(node, hash);
+            }, COMMIT_HOVER_DELAY_MS);
+        }
+
+        function cancelCommitHoverPopover() {
+            if (__commitHoverTimer) {
+                clearTimeout(__commitHoverTimer);
+                __commitHoverTimer = null;
+            }
+            if (__commitHoverAbort) {
+                __commitHoverAbort.abort();
+                __commitHoverAbort = null;
+            }
+            if (__commitHoverPopover && __commitHoverPopover.parentNode) {
+                __commitHoverPopover.parentNode.removeChild(__commitHoverPopover);
+            }
+            __commitHoverPopover = null;
+            __commitHoverNode = null;
+        }
+
+        let __commitHoverPopover = null;
+
+        async function showCommitHoverPopover(node, hash) {
+            // Determine parent hash from the ordered list (newest-first).
+            const idx = __commitHashOrder.indexOf(hash);
+            const parentHash = idx >= 0 && idx + 1 < __commitHashOrder.length
+                ? __commitHashOrder[idx + 1]
+                : null;
+
+            // Render an immediate "loading" skeleton so the user gets
+            // feedback even while the diff request is in flight.
+            renderCommitPopover(node, hash, { state: 'loading', parentHash });
+
+            // If no parent in the fetched window → can't diff — tell the user.
+            if (!parentHash) {
+                renderCommitPopover(node, hash, {
+                    state: 'no-parent',
+                    parentHash: null,
+                });
+                return;
+            }
+
+            // Cached response → render immediately.
+            if (__commitDiffCache.has(hash)) {
+                renderCommitPopover(node, hash, {
+                    state: 'ready',
+                    parentHash,
+                    data: __commitDiffCache.get(hash),
+                });
+                return;
+            }
+
+            try {
+                __commitHoverAbort = new AbortController();
+                const url = `/api/diff?path=${encodeURIComponent(connectedStorePath)}`
+                    + `&commit1=${encodeURIComponent(parentHash)}`
+                    + `&commit2=${encodeURIComponent(hash)}`;
+                const res = await fetch(url, { signal: __commitHoverAbort.signal });
+                __commitHoverAbort = null;
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'diff failed');
+                __commitDiffCache.set(hash, data);
+                // Still hovering the same node? render; else ignore.
+                if (__commitHoverNode === node) {
+                    renderCommitPopover(node, hash, { state: 'ready', parentHash, data });
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                if (__commitHoverNode === node) {
+                    renderCommitPopover(node, hash, {
+                        state: 'error',
+                        parentHash,
+                        error: err.message,
+                    });
+                }
+            }
+        }
+
+        function renderCommitPopover(node, hash, payload) {
+            // Replace any existing popover content.
+            if (__commitHoverPopover && __commitHoverPopover.parentNode) {
+                __commitHoverPopover.parentNode.removeChild(__commitHoverPopover);
+            }
+            __commitHoverPopover = document.createElement('div');
+            __commitHoverPopover.className = 'commit-hover-popover';
+
+            const short = hash.slice(0, 8);
+            let body = '';
+            if (payload.state === 'loading') {
+                body = `<div class="commit-hover-loading">Loading changes for ${short}…</div>`;
+            } else if (payload.state === 'no-parent') {
+                body = `<div class="commit-hover-note">Oldest commit in the loaded history — no parent to diff against.</div>`;
+            } else if (payload.state === 'error') {
+                body = `<div class="commit-hover-error">Failed to load diff: ${escapeHtml(payload.error || 'unknown error')}</div>`;
+            } else if (payload.state === 'ready') {
+                const { data } = payload;
+                const stats = data.stats || { added: 0, modified: 0, deleted: 0 };
+                const changes = data.changes || [];
+                const statsLine = `<span class="cpop-stat cpop-added">+${stats.added || 0}</span>`
+                    + ` <span class="cpop-stat cpop-modified">~${stats.modified || 0}</span>`
+                    + ` <span class="cpop-stat cpop-deleted">−${stats.deleted || 0}</span>`;
+                const max = 10;
+                const rows = changes.slice(0, max).map(c => {
+                    const icon = c.type === 'added' ? '+' : c.type === 'modified' ? '~' : '−';
+                    const cls  = c.type === 'added' ? 'cpop-added' : c.type === 'modified' ? 'cpop-modified' : 'cpop-deleted';
+                    return `<div class="cpop-row ${cls}"><span class="cpop-icon">${icon}</span><span class="cpop-path">${escapeHtml(c.path || '')}</span></div>`;
+                }).join('');
+                const more = changes.length > max
+                    ? `<div class="cpop-more">… and ${changes.length - max} more</div>`
+                    : '';
+                const empty = changes.length === 0
+                    ? `<div class="commit-hover-note">No key-level changes (commit may only touch metadata).</div>`
+                    : '';
+                body = `
+                    <div class="cpop-header">
+                        <span class="cpop-short">${short}</span>
+                        <span class="cpop-stats">${statsLine}</span>
+                    </div>
+                    ${empty}
+                    ${rows ? `<div class="cpop-list">${rows}${more}</div>` : ''}
+                `;
+            }
+            __commitHoverPopover.innerHTML = body;
+            document.body.appendChild(__commitHoverPopover);
+
+            // Position: prefer right of the commit node; flip if off-screen.
+            const rect = node.getBoundingClientRect();
+            const pop = __commitHoverPopover.getBoundingClientRect();
+            const margin = 8;
+            let left = rect.right + margin;
+            if (left + pop.width > window.innerWidth - margin) {
+                left = Math.max(margin, rect.left - pop.width - margin);
+            }
+            let top = rect.top;
+            if (top + pop.height > window.innerHeight - margin) {
+                top = Math.max(margin, window.innerHeight - pop.height - margin);
+            }
+            __commitHoverPopover.style.left = `${left}px`;
+            __commitHoverPopover.style.top = `${top}px`;
+        }
+
+        // Inject popover CSS once.
+        (function injectCommitHoverStyles() {
+            if (document.getElementById('commit-hover-styles')) return;
+            const style = document.createElement('style');
+            style.id = 'commit-hover-styles';
+            style.textContent = `
+                .commit-hover-popover {
+                    position: fixed;
+                    z-index: 10050;
+                    min-width: 280px;
+                    max-width: 420px;
+                    background: rgba(17, 24, 39, 0.97);
+                    color: var(--text-primary, #e5e7eb);
+                    border: 1px solid rgba(99, 102, 241, 0.35);
+                    border-radius: 10px;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+                    padding: 10px 12px;
+                    font-family: 'JetBrains Mono', ui-monospace, monospace;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    pointer-events: none;
+                    backdrop-filter: blur(6px);
+                    animation: cpop-fadein 0.12s ease-out;
+                }
+                @keyframes cpop-fadein {
+                    from { opacity: 0; transform: translateY(-2px); }
+                    to   { opacity: 1; transform: translateY(0);    }
+                }
+                .cpop-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+                    padding-bottom: 6px;
+                    margin-bottom: 6px;
+                }
+                .cpop-short {
+                    color: #a5b4fc;
+                    font-weight: 600;
+                }
+                .cpop-stats { display: inline-flex; gap: 8px; }
+                .cpop-stat  { font-weight: 700; }
+                .cpop-added    { color: #34d399; }
+                .cpop-modified { color: #fbbf24; }
+                .cpop-deleted  { color: #f87171; }
+                .cpop-list { display: flex; flex-direction: column; gap: 2px; }
+                .cpop-row  {
+                    display: flex;
+                    gap: 6px;
+                    align-items: baseline;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .cpop-icon { width: 10px; text-align: center; font-weight: 700; }
+                .cpop-path {
+                    color: var(--text-primary, #e5e7eb);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .cpop-more {
+                    color: #94a3b8;
+                    font-style: italic;
+                    margin-top: 4px;
+                }
+                .commit-hover-note,
+                .commit-hover-loading { color: #94a3b8; font-style: italic; }
+                .commit-hover-error   { color: #f87171; }
+            `;
+            document.head.appendChild(style);
+        })();
 
         function getTimeAgo(date) {
             const seconds = Math.floor((new Date() - date) / 1000);
@@ -7806,10 +8390,26 @@ No commit history found for this key.
             // Get commit info for display
             const shortHash = commitHash.slice(0, 8);
 
+            // Time-travel mutates the store (creates a branch), so it's
+            // gated by the same readonly flag as /time-travel itself.
+            const ttBlock = window.memoirConfig
+                ? window.memoirConfig.isCommandBlocked('/time-travel')
+                : null;
+            const ttDisabled = !!ttBlock;
+            const ttStyle = ttDisabled
+                ? ' style="opacity:0.4;cursor:not-allowed;"'
+                : '';
+            const ttTitle = ttDisabled
+                ? ` title="${window.memoirConfig.escapeAttr(ttBlock.message)}"`
+                : '';
+            const ttBadge = ttDisabled
+                ? ' <span style="margin-left:auto;color:#f87171;font-size:9px;font-weight:700;">🔒 READONLY</span>'
+                : '';
+
             menu.innerHTML = `
-                <div class="commit-menu-item time-travel" data-action="time-travel" data-commit="${commitHash}">
+                <div class="commit-menu-item time-travel${ttDisabled ? ' disabled' : ''}" data-action="time-travel" data-commit="${commitHash}" data-disabled="${ttDisabled ? '1' : '0'}"${ttStyle}${ttTitle}>
                     <span class="menu-icon">🕐</span>
-                    Time-travel to ${shortHash}
+                    Time-travel to ${shortHash}${ttBadge}
                 </div>
                 <div class="commit-menu-item" data-action="view-diff" data-commit="${commitHash}">
                     <span class="menu-icon">🔍</span>
@@ -7839,8 +8439,19 @@ No commit history found for this key.
                 item.addEventListener('click', async (e) => {
                     const action = e.currentTarget.dataset.action;
                     const commit = e.currentTarget.dataset.commit;
+                    const disabled = e.currentTarget.dataset.disabled === '1';
 
                     hideAllCommitMenus();
+
+                    if (disabled) {
+                        // Item was rendered disabled (e.g. readonly). Re-use
+                        // the central guard so the user gets the exact
+                        // "relaunch with --no-readonly" hint.
+                        if (action === 'time-travel' && window.memoirConfig) {
+                            window.memoirConfig.guardCommand('/time-travel');
+                        }
+                        return;
+                    }
 
                     switch(action) {
                         case 'time-travel':
@@ -9048,6 +9659,27 @@ Message: ${commit.message}`;
 
         // Initialize the page
         function initializePage() {
+            // URL override: `?store=<path>` (from `memoir ui <path>`) takes precedence
+            // over saved state so the CLI can force-open a specific repo.
+            const urlStorePath = new URLSearchParams(window.location.search).get('store');
+            if (urlStorePath) {
+                console.log('🔧 initializePage: URL override store =', urlStorePath);
+                connectedStorePath = urlStorePath;
+                window.isDemoModeActive = false;
+                connectToStore(urlStorePath);
+
+                initializeMemoryInput();
+                initializeBranchSelector();
+                initializeBranchButtons();
+                initializeViewSwitching();
+                initializeStatsModal();
+
+                if (window.memoirConfig && window.memoirConfig.applyDomGuards) {
+                    window.memoirConfig.applyDomGuards();
+                }
+                return;
+            }
+
             // Load previous connection state
             const savedState = loadConnectionState();
             console.log('🔧 initializePage: savedState =', savedState);
@@ -9118,6 +9750,11 @@ Message: ${commit.message}`;
 
             // Initialize statistics modal
             initializeStatsModal();
+
+            // Apply CLI-supplied readonly / usellm guards to DOM controls.
+            if (window.memoirConfig && window.memoirConfig.applyDomGuards) {
+                window.memoirConfig.applyDomGuards();
+            }
         }
 
         // Show disconnected state without demo data
@@ -9457,6 +10094,37 @@ Message: ${commit.message}`;
                         animation: glow 1.5s ease-in-out infinite alternate;
                     }
 
+                    .help-command-blocked {
+                        opacity: 0.5;
+                        filter: grayscale(0.4);
+                        cursor: not-allowed;
+                        position: relative;
+                    }
+
+                    .help-command-blocked:hover {
+                        opacity: 0.7;
+                    }
+
+                    .help-blocked-indicator {
+                        color: #ffffff;
+                        font-size: 9px;
+                        font-weight: 700;
+                        padding: 2px 6px;
+                        border-radius: 8px;
+                        margin-left: 8px;
+                        letter-spacing: 0.5px;
+                    }
+
+                    .help-blocked-indicator-readonly {
+                        background: linear-gradient(135deg, #ef4444, #b91c1c);
+                        box-shadow: 0 1px 3px rgba(239, 68, 68, 0.4);
+                    }
+
+                    .help-blocked-indicator-llm {
+                        background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+                        box-shadow: 0 1px 3px rgba(139, 92, 246, 0.4);
+                    }
+
                     .help-placeholder-note {
                         background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1));
                         border: 1px solid rgba(251, 191, 36, 0.3);
@@ -9470,35 +10138,6 @@ Message: ${commit.message}`;
                         margin: 0;
                         font-size: 13px;
                         line-height: 1.5;
-                    }
-
-                    .help-api-docs {
-                        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 51, 234, 0.1));
-                        border: 1px solid rgba(59, 130, 246, 0.3);
-                        border-radius: 12px;
-                        padding: 16px;
-                        margin-bottom: 20px;
-                    }
-
-                    .help-api-docs h4 {
-                        color: var(--accent-secondary);
-                        margin-bottom: 10px;
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                    }
-
-                    .help-api-link {
-                        color: var(--accent-secondary);
-                        text-decoration: none;
-                        font-weight: 600;
-                        border-bottom: 1px solid transparent;
-                        transition: all 0.2s ease;
-                    }
-
-                    .help-api-link:hover {
-                        border-bottom-color: var(--accent-secondary);
-                        transform: translateY(-1px);
                     }
 
                     @keyframes pulse {
@@ -9567,18 +10206,49 @@ Message: ${commit.message}`;
             window.currentHelpModal = modal;
         }
 
-        function generateHelpContent() {
-            const coreCommands = availableCommands.filter(c => ['connect', 'new', 'import', 'remember', 'forget', 'refresh'].some(cmd => c.cmd.includes(cmd)));
-            const gitCommands = availableCommands.filter(c => ['branch', 'checkout', 'merge', 'time-travel', 'commits', 'blame'].some(cmd => c.cmd.includes(cmd)));
-            const viewCommands = availableCommands.filter(c => ['timeline', 'location', 'summarize', 'recall', 'proof', 'verify'].some(cmd => c.cmd.includes(cmd)));
-            const devCommands = availableCommands.filter(c => ['eval', 'organize', 'inspect', 'diff', 'benchmark', 'export', 'compare-stores', 'replay', 'template'].some(cmd => c.cmd.includes(cmd)));
+        // Render a single command tile for the Command Reference modal.
+        // "placeholder" (Soon) and "blocked" (readonly/usellm) share the dim
+        // styling but use different badges and tooltips.
+        function renderHelpCommand(cmd) {
+            const block = !cmd.placeholder && window.memoirConfig
+                ? window.memoirConfig.isCommandBlocked(cmd.cmd)
+                : null;
+
+            const classes = ['help-command-item'];
+            if (cmd.placeholder) classes.push('help-command-placeholder');
+            if (block) classes.push('help-command-blocked', `help-blocked-${block.reason}`);
+
+            let badge = '';
+            if (cmd.placeholder) {
+                badge = '<span class="help-placeholder-indicator">Soon</span>';
+            } else if (block) {
+                badge = `<span class="help-blocked-indicator help-blocked-indicator-${block.reason}">🔒 ${block.label}</span>`;
+            }
+
+            const tooltip = block
+                ? ` title="${window.memoirConfig.escapeAttr(block.message)}"`
+                : '';
 
             return `
-                <div class="help-api-docs">
-                    <h4>📚 API Documentation</h4>
-                    <p>For comprehensive API documentation, integration guides, and developer resources, visit: <a href="https://memoir-memoir.readthedocs-hosted.com/en/latest/" target="_blank" rel="noopener noreferrer" class="help-api-link">memoir-memoir.readthedocs-hosted.com</a></p>
+                <div class="${classes.join(' ')}"${tooltip}>
+                    <div class="help-command-syntax">
+                        ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
+                        ${badge}
+                    </div>
+                    <div class="help-command-desc">${cmd.desc}</div>
+                    ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
                 </div>
+            `;
+        }
 
+        function generateHelpContent() {
+            // Hide "Soon" (placeholder) commands from the reference entirely.
+            const visible = availableCommands.filter(c => !c.placeholder);
+            const coreCommands = visible.filter(c => ['connect', 'new', 'import', 'remember', 'forget', 'refresh'].some(cmd => c.cmd.includes(cmd)));
+            const gitCommands = visible.filter(c => ['branch', 'checkout', 'merge', 'time-travel', 'commits', 'blame'].some(cmd => c.cmd.includes(cmd)));
+            const viewCommands = visible.filter(c => ['timeline', 'location', 'summarize', 'recall', 'proof', 'verify'].some(cmd => c.cmd.includes(cmd)));
+
+            return `
                 <div class="help-info-box">
                     <h4>💡 Getting Started</h4>
                     <p>Memoir brings Git-like version control to AI memory systems. Connect to a memory store to start exploring your data with cryptographic integrity and full history tracking.</p>
@@ -9590,14 +10260,7 @@ Message: ${commit.message}`;
                     <h3>🔗 Core Operations</h3>
                     <div class="help-command-grid">
                         ${coreCommands.map(cmd => `
-                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
-                                <div class="help-command-syntax">
-                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
-                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
-                                </div>
-                                <div class="help-command-desc">${cmd.desc}</div>
-                                ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
-                            </div>
+                            ${renderHelpCommand(cmd)}
                         `).join('')}
                     </div>
                 </div>
@@ -9606,14 +10269,7 @@ Message: ${commit.message}`;
                     <h3>🌿 Git-like Version Control</h3>
                     <div class="help-command-grid">
                         ${gitCommands.map(cmd => `
-                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
-                                <div class="help-command-syntax">
-                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
-                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
-                                </div>
-                                <div class="help-command-desc">${cmd.desc}</div>
-                                ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
-                            </div>
+                            ${renderHelpCommand(cmd)}
                         `).join('')}
                     </div>
                 </div>
@@ -9622,44 +10278,11 @@ Message: ${commit.message}`;
                     <h3>📊 Data Views & Analysis</h3>
                     <div class="help-command-grid">
                         ${viewCommands.map(cmd => `
-                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
-                                <div class="help-command-syntax">
-                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
-                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
-                                </div>
-                                <div class="help-command-desc">${cmd.desc}</div>
-                                ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
-                            </div>
+                            ${renderHelpCommand(cmd)}
                         `).join('')}
                     </div>
                 </div>
 
-                <div class="help-section">
-                    <h3>🛠️ Developer & Debugging Tools <span class="help-coming-soon-badge">Supported Soon</span></h3>
-                    <div class="help-command-grid">
-                        ${devCommands.map(cmd => `
-                            <div class="help-command-item ${cmd.placeholder ? 'help-command-placeholder' : ''}">
-                                <div class="help-command-syntax">
-                                    ${cmd.cmd}${cmd.args ? ' ' + cmd.args : ''}
-                                    ${cmd.placeholder ? '<span class="help-placeholder-indicator">Soon</span>' : ''}
-                                </div>
-                                <div class="help-command-desc">${cmd.desc}</div>
-                                ${cmd.aliases ? `<div class="help-command-aliases">Aliases: ${cmd.aliases}</div>` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-                    <div class="help-placeholder-note">
-                        <p><strong>🚀 Coming Soon:</strong> Advanced developer tools are in active development. These commands will provide powerful debugging and analysis capabilities for AI agent development.</p>
-                    </div>
-                </div>
-
-                <div class="help-info-box">
-                    <h4>⚡ Pro Tips</h4>
-                    <p>• Use aliases for faster typing: <code>/con</code> instead of <code>/connect</code>, <code>/rem</code> for <code>/remember</code></p>
-                    <p>• Commands support tab completion and history - use ↑/↓ arrow keys to browse previous commands</p>
-                    <p>• All memory operations are cryptographically secured with SHA-256 hashing</p>
-                    <p>• Use <code>/demo</code> to explore sample data, <code>/repo</code> for GitHub repository information</p>
-                </div>
             `;
         }
 

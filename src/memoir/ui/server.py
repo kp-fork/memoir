@@ -8,6 +8,8 @@ import json
 import socketserver
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -29,10 +31,26 @@ from memoir.ui.handlers.utils import UtilityHandler
 PORT = 8080
 
 
+class ReusableTCPServer(socketserver.TCPServer):
+    """TCPServer with SO_REUSEADDR enabled so quick restarts don't trip over
+    TIME_WAIT sockets from a prior run."""
+
+    allow_reuse_address = True
+
+
 class MemoryStoreHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         # Set the directory to serve from
         super().__init__(*args, directory=str(Path(__file__).parent), **kwargs)
+
+    def handle(self):
+        # Bump the idle watchdog's last-activity timestamp on every request
+        # so the server only counts as "idle" when no request has arrived
+        # for a whole idle_timeout window.
+        srv = getattr(self, "server", None)
+        if srv is not None and hasattr(srv, "last_activity"):
+            srv.last_activity = time.monotonic()
+        return super().handle()
 
     def _ensure_handlers_initialized(self):
         """Initialize handlers if not already done."""
@@ -2851,19 +2869,79 @@ Answer:"""
         return datetime.now().isoformat()
 
 
-def main():
-    print(f"Starting Memoir UI server on http://localhost:{PORT}")
-    print(f"Open http://localhost:{PORT} in your browser")
-    print("\nTo connect to a memory store, use the command in the UI:")
-    print("  /connect /tmp/memoir_ui_store")
-    print("\nPress Ctrl+C to stop the server")
+def run_server(port: int = 0, on_ready=None, idle_timeout: int = 300):
+    """Run the Memoir UI HTTP server.
 
-    with socketserver.TCPServer(("", PORT), MemoryStoreHandler) as httpd:
+    ``port=0`` (the default) asks the OS for a free ephemeral port; pass an
+    explicit port to pin it. Binds the socket first so port-conflict errors
+    surface before any startup output. ``on_ready`` is called with the bound
+    port after a successful bind but before ``serve_forever`` — use it to open
+    a browser tab, etc.
+
+    ``idle_timeout`` (seconds, default 300) auto-shuts-down the server when
+    no HTTP request has arrived for that long. Pass ``0`` (or any non-positive
+    value) to disable the watchdog and run indefinitely.
+
+    Blocks until the server is shut down (Ctrl+C or the idle watchdog).
+    """
+    # Bind first; this raises OSError (EADDRINUSE) before we print anything.
+    with ReusableTCPServer(("", port), MemoryStoreHandler) as httpd:
+        bound_port = httpd.server_address[1]
+        print(f"Starting Memoir UI server on http://localhost:{bound_port}")
+        print(f"Open http://localhost:{bound_port} in your browser")
+        print("\nTo connect to a memory store, use the command in the UI:")
+        print("  /connect /tmp/memoir_ui_store")
+        if idle_timeout and idle_timeout > 0:
+            print(
+                f"\nServer will auto-stop after {idle_timeout}s of inactivity."
+            )
+        print("Press Ctrl+C to stop the server")
+
+        # Seed the activity timestamp so the watchdog measures from startup.
+        httpd.last_activity = time.monotonic()
+
+        idle_stop_event = threading.Event()
+
+        def _idle_watchdog():
+            # Poll at a coarse but responsive interval (min 1s, max 5s).
+            interval = max(1.0, min(5.0, idle_timeout / 10.0))
+            while not idle_stop_event.wait(interval):
+                if time.monotonic() - httpd.last_activity >= idle_timeout:
+                    print(
+                        f"\nServer idle for {idle_timeout}s — shutting down."
+                    )
+                    # serve_forever() is running on the main thread; shutdown()
+                    # MUST be called from a different thread (this one).
+                    threading.Thread(
+                        target=httpd.shutdown, daemon=True
+                    ).start()
+                    return
+
+        watchdog_thread = None
+        if idle_timeout and idle_timeout > 0:
+            watchdog_thread = threading.Thread(
+                target=_idle_watchdog, daemon=True, name="memoir-ui-idle-watchdog"
+            )
+            watchdog_thread.start()
+
+        if on_ready is not None:
+            try:
+                on_ready(bound_port)
+            except Exception as e:
+                print(f"on_ready callback failed: {e}")
+
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nShutting down server...")
             httpd.shutdown()
+        finally:
+            # Ensure the watchdog exits cleanly so Python can shut down.
+            idle_stop_event.set()
+
+
+def main():
+    run_server(PORT)  # python -m invocation keeps the historical 8080 default
 
 
 if __name__ == "__main__":
