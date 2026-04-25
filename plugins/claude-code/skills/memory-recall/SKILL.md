@@ -131,7 +131,8 @@ Use only when the question is explicitly about change between two points, or cro
 - `[mode=flat]` — single-glob scope (`summarize --keys <pattern>` → pick → `get`).
 - `[mode=blame]` — you escalated to L2.
 - `[mode=diff]` — you escalated to L3.
-- `[mode=recall-legacy]` — you invoked `memoir recall` (you should NOT do this; if you see yourself emitting this tag, stop and switch to `drill` or `flat`).
+
+`memoir recall` is not a permitted mode and has no marker — if you ever feel tempted to reach for it, stop and use `drill` or `flat` instead.
 
 Combine markers when you chained paths (e.g. `[mode=drill+blame]`).
 
