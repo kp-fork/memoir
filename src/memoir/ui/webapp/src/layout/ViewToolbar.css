@@ -2,8 +2,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin-left: auto; /* push to right edge of the tab row */
-  padding-right: var(--space-2);
+  padding: 0 var(--space-2);
+  align-self: center;
 }
 
 .view-toolbar-btn {

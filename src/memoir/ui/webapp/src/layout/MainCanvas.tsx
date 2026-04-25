@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useStore } from "../state/storeSlice";
 import { useUI, VISIBLE_VIEW_KEYS, type ViewKey } from "../state/uiSlice";
 import { dispatch } from "../commands/registry";
@@ -53,19 +53,20 @@ export default function MainCanvas() {
         {VISIBLE_VIEW_KEYS.map((key) => {
           const meta = VIEW_LABELS[key];
           return (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={active === key}
-              className={`view-tab ${active === key ? "active" : ""}`}
-              onClick={() => setActive(key)}
-            >
-              <span>{meta.label}</span>
-              <kbd className="view-tab-kbd">{meta.shortcut}</kbd>
-            </button>
+            <Fragment key={key}>
+              <button
+                role="tab"
+                aria-selected={active === key}
+                className={`view-tab ${active === key ? "active" : ""}`}
+                onClick={() => setActive(key)}
+              >
+                <span>{meta.label}</span>
+                <kbd className="view-tab-kbd">{meta.shortcut}</kbd>
+              </button>
+              {key === "graph" && <ViewToolbar />}
+            </Fragment>
           );
         })}
-        <ViewToolbar />
       </nav>
 
       <div className="view-body" role="tabpanel" aria-label={`${active} view`}>

@@ -17,7 +17,6 @@ export default function TopBar() {
   };
 
   const branch = data?.current_branch ?? (status === "connected" ? "—" : "");
-  const memoryCount = data?.total_memories;
 
   return (
     <header className="topbar" role="banner">
@@ -83,11 +82,6 @@ export default function TopBar() {
             </svg>
             <span>{branch}</span>
           </button>
-        )}
-        {typeof memoryCount === "number" && (
-          <span className="chip" title="Total memories in store">
-            {memoryCount} mem
-          </span>
         )}
         <button
           className="btn btn-ghost btn-sm"
