@@ -292,7 +292,7 @@
 .sync-confirm-key-remove:hover {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.3);
-  color: var(--error, #ef4444);
+  color: var(--danger, #ef4444);
 }
 
 .sync-confirm-key-row.excluded .sync-confirm-key-remove {

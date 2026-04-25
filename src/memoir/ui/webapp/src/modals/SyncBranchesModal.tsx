@@ -133,9 +133,8 @@ export default function SyncBranchesModal() {
 
   const onConfirmMerge = async (branch: BranchStatus) => {
     if (!storePath || !data) return;
-    const excluded = mergePreview?.branch === branch.name
-      ? [...mergePreview.excluded]
-      : [];
+    const excluded =
+      mergePreview?.branch === branch.name ? [...mergePreview.excluded] : [];
     setBusyBranch(branch.name);
     setError(null);
     try {
