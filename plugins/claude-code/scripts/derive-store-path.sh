@@ -3,10 +3,15 @@
 # Used by hooks (via common.sh) and the memory-recall skill.
 #
 # Usage: derive-store-path.sh [project_dir]
-#   If no argument given, uses pwd.
+#   If no argument given, uses the git root (or pwd if no git).
 #
-# Output: $HOME/.memoir/<sanitized_basename>_<8char_sha256>
-#   e.g. /home/user/my-app  ->  /home/user/.memoir/my_app_a1b2c3d4
+# Output: $HOME/.memoir/<slug>
+#   The slug mirrors Claude Code's own project naming convention under
+#   ~/.claude/projects/: take the absolute path and replace '/' and '.'
+#   with '-'.
+#
+#   /Users/feng/github/memoir         -> ~/.memoir/-Users-feng-github-memoir
+#   /Users/feng/.claude-mem/sessions  -> ~/.memoir/-Users-feng--claude-mem-sessions
 #
 # Design note: per-project store (not per-project namespace in a shared store)
 # was chosen to keep memoir's git operations — branching, time-travel, merge
@@ -40,19 +45,9 @@ else
   esac
 fi
 
-sanitized=$(basename "$PROJECT_DIR" \
-  | tr '[:upper:]' '[:lower:]' \
-  | sed 's/[^a-z0-9]/_/g' \
-  | sed 's/__*/_/g' \
-  | sed 's/^_//;s/_$//' \
-  | cut -c1-40)
+# Slug = absolute path with '/' and '.' replaced by '-'. Matches the
+# layout Claude Code uses for its own project state under
+# ~/.claude/projects/, so users can correlate across both systems by eye.
+slug=$(printf '%s' "$PROJECT_DIR" | tr '/.' '--')
 
-if command -v sha256sum &>/dev/null; then
-  hash=$(printf '%s' "$PROJECT_DIR" | sha256sum | cut -c1-8)
-elif command -v shasum &>/dev/null; then
-  hash=$(printf '%s' "$PROJECT_DIR" | shasum -a 256 | cut -c1-8)
-else
-  hash=$(python3 -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8])" "$PROJECT_DIR")
-fi
-
-echo "$HOME/.memoir/${sanitized}_${hash}"
+echo "$HOME/.memoir/${slug}"
