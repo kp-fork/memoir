@@ -1,17 +1,25 @@
 ---
 name: memory-recall
-description: "Recall relevant facts from past sessions via memoir. DEFAULT ON — when in doubt, recall. Cost of an unnecessary recall is low; cost of silently missing a remembered preference or decision is high. Fire on ANY of: (1) QUESTIONS that touch past state, decisions, or user knowledge — 'what did I decide about X', 'why did we do Y', 'have I seen this before', 'what do you know about X', 'what do you know about this project'; (2) META / SUMMARY / OVERVIEW asks about the user, the project, preferences, history, or prior work — 'give me an overview', 'summarize what I've told you', 'what are my defaults', 'tell me about Y'; (3) TASK / DESIGN / IMPLEMENTATION prompts where output might depend on prior decisions, style, naming, tooling, or conventions — 'follow our usual pattern', 'match existing style', 'use the same approach', and ANY non-trivial styling, naming, or architectural choice; (4) SessionStart / UserPromptSubmit hints like `[memoir] memory available`; (5) ANY moment you catch yourself thinking 'the user might have opinions about this' or 'I'll answer from what's already in context' — silently applying remembered preferences without recalling is the #1 failure mode, and pre-injected snapshots do NOT cover the default namespace. Skip ONLY when: (a) the prompt is a strictly mechanical current-code lookup (single Read/Grep for a known symbol, no preference surface); (b) the task is genuinely ephemeral throwaway work (one-off scratch script, today-only) with no reusable-preference implications; (c) the user has explicitly asked to ignore memory. Defer to memoir-onboard (not skip) when the question is about REPO STRUCTURE — that skill owns `codebase:onboard`; memory-recall owns the `default` namespace of user-captured facts. When in doubt: recall."
+description: "Recall relevant facts from past sessions via memoir. STORE PATH: ALWAYS compute it first via `STORE=$(bash \"$CLAUDE_PLUGIN_ROOT/scripts/derive-store-path.sh\")` (or `$MEMOIR_STORE` if set) — NEVER rely on `memoir`'s connected default (`~/.config/memoir/config.json`); it is frequently stale and points at unrelated/test stores, which is the #1 reason recall silently returns wrong data. Pass `-s \"$STORE\"` on every call. PROCEDURE: run `memoir --json -s \"$STORE\" summarize --depth 1 -n default` → pick L1 prefix → `summarize --keys \"<L1>.*\"` → batch `get`. NEVER shell out to `memoir recall` — that is the legacy LLM-bundled path that spawns a nested `claude -p` and fails without `OPENAI_API_KEY`; the skill's whole purpose is to replace it. First line of your reply MUST be a mode marker: `[mode=get|drill|flat|blame|diff]`. DEFAULT ON — when in doubt, recall. Cost of an unnecessary recall is low; cost of silently missing a remembered preference or decision is high. Fire on ANY of: (1) QUESTIONS that touch past state, decisions, or user knowledge — 'what did I decide about X', 'why did we do Y', 'have I seen this before', 'what do you know about X', 'what do you know about this project'; (2) META / SUMMARY / OVERVIEW asks about the user, the project, preferences, history, or prior work — 'give me an overview', 'summarize what I've told you', 'what are my defaults', 'tell me about Y'; (3) TASK / DESIGN / IMPLEMENTATION prompts where output might depend on prior decisions, style, naming, tooling, or conventions — 'follow our usual pattern', 'match existing style', 'use the same approach', and ANY non-trivial styling, naming, or architectural choice; (4) SessionStart / UserPromptSubmit hints like `[memoir] memory available`; (5) ANY moment you catch yourself thinking 'the user might have opinions about this' or 'I'll answer from what's already in context' — silently applying remembered preferences without recalling is the #1 failure mode, and pre-injected snapshots do NOT cover the default namespace. Skip ONLY when: (a) the prompt is a strictly mechanical current-code lookup (single Read/Grep for a known symbol, no preference surface); (b) the task is genuinely ephemeral throwaway work (one-off scratch script, today-only) with no reusable-preference implications; (c) the user has explicitly asked to ignore memory. Defer to memoir-onboard (not skip) when the question is about REPO STRUCTURE — that skill owns `codebase:onboard`; memory-recall owns the `default` namespace of user-captured facts. When in doubt: recall."
 context: fork
 allowed-tools: Bash
 ---
 
 You are a memory retrieval agent for memoir. Memoir is **not** a vector store — it is a git-versioned, taxonomy-structured memory system. Each memory lives at a human-readable taxonomy path (e.g. `preferences.coding.languages`, `profile.professional.skills`). Your job is to pick the right paths for the user's query and fetch their values.
 
-## Store path
+## Store path — resolve this BEFORE any memoir command
 
-Store: !`bash -c 'if [ -n "${MEMOIR_STORE:-}" ]; then echo "$MEMOIR_STORE"; else bash "${CLAUDE_PLUGIN_ROOT}/scripts/derive-store-path.sh"; fi'`
+Run this first, every session, and reuse `$STORE` for every memoir invocation below:
 
-Use this path for every memoir invocation below.
+```bash
+STORE="${MEMOIR_STORE:-$(bash "$CLAUDE_PLUGIN_ROOT/scripts/derive-store-path.sh")}"
+```
+
+The script hashes the project's git-root absolute path into `~/.memoir/<basename>_<8charhash>`. Different machines, checkout locations, or renamed directories produce different paths — never hardcode a specific store name.
+
+**Do NOT** rely on `memoir`'s connected default (the path stored in `~/.config/memoir/config.json` and shown by bare `memoir status`). It frequently points at stale or unrelated test stores; using it has caused this skill to return memories from the wrong project (or none at all). If `memoir status` (no `-s`) and `memoir -s "$STORE" status` disagree, **trust the script**, and consider running `memoir connect "$STORE"` to fix the global default.
+
+Pass `-s "$STORE"` on **every** memoir call below, including `summarize`, `get`, `blame`, and `diff`.
 
 ## How recall works — pick paths, then fetch
 
@@ -28,7 +36,7 @@ Between them, **you** are the picker. Read the query, read the taxonomy prefixes
 If the user's request already names an exact taxonomy path (e.g. "what's in `preferences.coding.style`?") or you just learned the path from a prior turn, **skip straight to `get`**:
 
 ```bash
-memoir --json -s <STORE_PATH> get <path> [<path>...] [-n <namespace>]
+memoir --json -s "$STORE" get <path> [<path>...] [-n <namespace>]
 ```
 
 Returns `items[]` with `{key, namespace, full_key, found, value}`. Batching is safe.
@@ -40,7 +48,7 @@ Flat "list every key, then pick" works for small stores but blows up past a few 
 ### Step 1 — L1 survey
 
 ```bash
-memoir --json -s <STORE_PATH> summarize --depth 1 -n default
+memoir --json -s "$STORE" summarize --depth 1 -n default
 ```
 
 Returns `prefix_counts: { "default": { "preferences": 9, "context": 15, "workflow": 7, ... } }`. Typically ≤ 10 top-level prefixes.
@@ -56,15 +64,15 @@ Read the L1 histogram. Pick 2–4 prefixes whose names plausibly cover the query
 For each picked L1 prefix, list its keys:
 
 ```bash
-memoir --json -s <STORE_PATH> summarize --keys "<L1>.*" -n default
+memoir --json -s "$STORE" summarize --keys "<L1>.*" -n default
 ```
 
 If a single L1 prefix still has too many keys (say > 40), drill another level first:
 
 ```bash
-memoir --json -s <STORE_PATH> summarize --keys "<L1>.*" --depth 2 -n default
+memoir --json -s "$STORE" summarize --keys "<L1>.*" --depth 2 -n default
 # pick likely L2 prefixes, then:
-memoir --json -s <STORE_PATH> summarize --keys "<L1>.<L2>.*" -n default
+memoir --json -s "$STORE" summarize --keys "<L1>.<L2>.*" -n default
 ```
 
 ### Step 4 — fetch
@@ -72,7 +80,7 @@ memoir --json -s <STORE_PATH> summarize --keys "<L1>.<L2>.*" -n default
 Pick 3–7 exact keys across all the descended prefixes, then batch-`get`:
 
 ```bash
-memoir --json -s <STORE_PATH> get <path1> <path2> ...
+memoir --json -s "$STORE" get <path1> <path2> ...
 ```
 
 Each item's `value.content` is the stored fact. `get` is cheap — when names are ambiguous, err on the side of including extra candidates.
@@ -82,7 +90,7 @@ Each item's `value.content` is the stored fact. `get` is cheap — when names ar
 If the query is narrow and you can express the scope as one glob (e.g. "what do I know about pytest?" → `*pytest*` or `*.testing.*`), skip the drill-down:
 
 ```bash
-memoir --json -s <STORE_PATH> summarize --keys "<pattern>" -n default
+memoir --json -s "$STORE" summarize --keys "<pattern>" -n default
 # pick from returned matches, then get
 ```
 
@@ -93,7 +101,7 @@ Use this when you have a strong a-priori match on path shape. Use drill-down whe
 ### L2 — blame a path
 
 ```bash
-memoir --json -s <STORE_PATH> blame "<path>" -l 10
+memoir --json -s "$STORE" blame "<path>" -l 10
 ```
 
 Use when the caller asks "when did I decide this?" or "has this changed?". Returns `entries[]` with `commit`, `author`, `date`, `message`.
@@ -101,13 +109,13 @@ Use when the caller asks "when did I decide this?" or "has this changed?". Retur
 ### L3 — diff across commits
 
 ```bash
-memoir --json -s <STORE_PATH> diff <commit_a> <commit_b>
+memoir --json -s "$STORE" diff <commit_a> <commit_b>
 ```
 
 Or list branches:
 
 ```bash
-memoir --json -s <STORE_PATH> branch
+memoir --json -s "$STORE" branch
 ```
 
 Use only when the question is explicitly about change between two points, or cross-branch comparison.
