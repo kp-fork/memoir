@@ -7,6 +7,7 @@ Tests branch operations: list, create, checkout, merge, commits, diff.
 import os
 import shutil
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -780,6 +781,64 @@ class TestBranchServicePromoteBranch:
             "turns_count": 3,
             "total_output_chars": 42,
         }
+
+    def test_promote_recovers_from_dirty_working_tree(self, temp_dir):
+        """Regression: a long-lived process with a dirty `data/` working tree
+        used to silently zero out the promote diff because both reads saw
+        the same accumulated working-tree state. The fix forces
+        `git checkout HEAD -- data/` before each branch read.
+
+        This test simulates the long-running UI server scenario by hand-
+        dirtying the working tree between the BranchService construction
+        and the promote_branch call. Without the fix, the dirty files
+        would mask the source-vs-target diff.
+        """
+        import subprocess
+
+        store_service = StoreService(temp_dir)
+        store_service.create_store(temp_dir)
+        service = BranchService(temp_dir)
+        store = service._get_store()
+        store.put(("default",), "shared", {"v": "main"})
+        store.commit("main initial")
+
+        service.create_branch("feature")
+        service.checkout("feature")
+        service._store = None
+        store = service._get_store()
+        store.put(("default",), "feature_only", {"v": "feature_value"})
+        store.commit("feature work")
+
+        # Simulate "long-running process leaves data/ dirty": append junk
+        # to one of the prollytree binary files. Real-world cause is
+        # repeated ProllyTreeStore writes between commits, but for a
+        # deterministic test we just dirty the file directly.
+        data_dir = Path(temp_dir) / "data"
+        if data_dir.exists():
+            for f in data_dir.iterdir():
+                if f.is_file():
+                    with open(f, "ab") as fh:
+                        fh.write(b"# stale state from prior request\n")
+                    break
+
+        # Confirm the working tree is in fact dirty before the call.
+        status = subprocess.run(
+            ["git", "-C", temp_dir, "status", "--short"],
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout.strip(), "fixture failed to dirty data/"
+
+        # promote_branch must still see feature_only as a new key on main —
+        # the fix's working-tree reset is what makes this pass.
+        service.checkout("main")
+        service._store = None
+        result = service.promote_branch("feature", "main", dry_run=True)
+        assert result.success is True
+        assert "feature_only" in result.added_keys, (
+            f"dirty working tree masked the diff — got added={result.added_keys}, "
+            f"updated={result.updated_keys}"
+        )
 
 
 class BranchInfoStub:

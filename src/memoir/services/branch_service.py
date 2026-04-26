@@ -910,6 +910,37 @@ class BranchService(BaseService):
         merge_result.restored_branch = restored
         return merge_result
 
+    def _reset_working_tree_to_head(self) -> None:
+        """Force the memoir store's working tree to match the current branch HEAD.
+
+        Why this exists: prollytree's ``VersionedKvStore`` reads the on-disk
+        ``data/prolly_*`` files. ``tree.checkout(...)`` updates git refs but
+        does NOT necessarily restore those files when they're dirty in the
+        caller's process. In a long-lived host (the UI server processing many
+        requests in one Python process), the working tree accumulates writes
+        across requests, so a subsequent ``promote_branch`` would read the
+        same accumulated state for both source and target — making them look
+        identical and silently zeroing out the diff. A fresh subprocess
+        doesn't hit this; a fresh ``BranchService`` in the same process does.
+
+        The fix: after each git-level checkout, run ``git checkout HEAD -- data/``
+        to restore the working tree to the branch's committed state. Cheap
+        (one subprocess), bounded (only ``data/``), and idempotent.
+        """
+        import subprocess as _sp
+
+        try:
+            _sp.run(
+                ["git", "-C", self.store_path, "checkout", "HEAD", "--", "data/"],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, _sp.SubprocessError) as e:
+            # Non-fatal; the diff may be stale but we don't want to abort
+            # the user's request. Logged for ops visibility.
+            logger.warning(f"_reset_working_tree_to_head: git checkout failed: {e}")
+
     def _read_default_namespace(self) -> dict[str, Any]:
         """
         Return all values stored under the ``default`` namespace on the
@@ -1019,6 +1050,13 @@ class BranchService(BaseService):
                 )
             # Drop the cached store so the next read re-loads from `source`.
             self._store = None
+        # Always reset the working tree to HEAD before reading — even when
+        # we skipped the checkout above, the working tree may carry stale
+        # `data/` files from prior in-process activity (long-running UI
+        # server, prior promote_branch call, etc.). See
+        # `_reset_working_tree_to_head` for the full rationale.
+        self._reset_working_tree_to_head()
+        self._store = None
 
         try:
             source_data = self._read_default_namespace()
@@ -1049,7 +1087,13 @@ class BranchService(BaseService):
                 error=checkout_target.error or f"Could not checkout target '{target}'",
                 dry_run=dry_run,
             )
-        # Fresh store handle so we read target's tree, not source's.
+        # Reset working tree + drop cached store so we read target's
+        # committed state, not stale `data/` files left over from the
+        # source-branch read above. Same rationale as the pre-source
+        # reset; without this, the long-running UI server consistently
+        # computes a zero-key diff because both reads see identical
+        # working-tree garbage.
+        self._reset_working_tree_to_head()
         self._store = None
         store = self._get_store()
 
