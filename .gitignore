@@ -236,3 +236,6 @@ semgrep-report.json
 # Temporary files
 *.tmp
 *.temp
+
+# Claude Code
+.claude/
