@@ -313,6 +313,16 @@
   );
 }
 
+/* Warning-tone variant — used for the per-branch tool-errors chart. Same
+   geometry as the default green bars, just an amber gradient. */
+.stats-bars.tone-warning .stats-bar-fill {
+  background: linear-gradient(
+    to right,
+    var(--warning),
+    #ff9500
+  );
+}
+
 .stats-bar-value {
   font-family: var(--font-mono);
   color: var(--fg-2);

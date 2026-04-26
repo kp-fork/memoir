@@ -75,15 +75,15 @@
 }
 
 .view-toolbar-led {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--fg-3);
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
+  color: var(--fg-3);
+  border-radius: 50%;
 }
 
 .view-toolbar-toggle.active .view-toolbar-led.on {
-  background: var(--accent);
+  color: var(--accent);
   box-shadow: 0 0 0 0 var(--accent);
   animation: view-toolbar-pulse 1.5s ease-in-out infinite;
 }

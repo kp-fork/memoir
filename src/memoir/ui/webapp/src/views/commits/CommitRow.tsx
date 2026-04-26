@@ -44,7 +44,22 @@ export default function CommitRow({
     >
       <div className="commit-gutter" aria-hidden="true">
         <span className="commit-line commit-line-top" data-hidden={isFirst} />
-        <span className="commit-dot" />
+        <svg
+          className="commit-dot"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        >
+          {/* Claude/Anthropic burst — 12 rays at 30° intervals from center. */}
+          <line x1="12" y1="2" x2="12" y2="22" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <line x1="20.66" y1="7" x2="3.34" y2="17" />
+          <line x1="17" y1="3.34" x2="7" y2="20.66" />
+          <line x1="3.34" y1="7" x2="20.66" y2="17" />
+          <line x1="7" y1="3.34" x2="17" y2="20.66" />
+        </svg>
         <span className="commit-line commit-line-bottom" data-hidden={isLast} />
       </div>
 

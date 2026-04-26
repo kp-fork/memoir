@@ -326,14 +326,17 @@ function StatRow({ label, value }: { label: string; value: unknown }) {
 function BarDistribution({
   title,
   dist,
+  tone,
 }: {
   title: string;
   dist: Record<string, number>;
+  /** Color variant. Default uses --accent (green). "warning" uses --warning. */
+  tone?: "warning";
 }) {
   const entries = Object.entries(dist);
   const max = Math.max(...entries.map(([, v]) => v), 1);
   return (
-    <section className="stats-bars">
+    <section className={`stats-bars${tone ? ` tone-${tone}` : ""}`}>
       <h4 className="stats-bars-title">{title}</h4>
       <ul className="stats-bars-list">
         {entries
@@ -494,13 +497,14 @@ function MetricsPanel({ items }: { items: MetricsItem[] }) {
     { key: "total_tool_errors", label: "Errors" },
     { key: "total_repeated_tool_calls", label: "Repeats" },
     {
-      key: "avg_latency_ms",
-      label: "Avg latency (ms)",
+      key: "avg_latency_s",
+      label: "Avg latency (s)",
       derive: (v) => {
         const total = v.total_latency_ms;
         const samples = v.latency_samples;
         if (typeof total === "number" && typeof samples === "number" && samples > 0) {
-          return Math.round(total / samples);
+          // ms → seconds, 1 decimal place
+          return Math.round(total / samples / 100) / 10;
         }
         return null;
       },
@@ -515,24 +519,30 @@ function MetricsPanel({ items }: { items: MetricsItem[] }) {
     value: (it.value && typeof it.value === "object" ? it.value : {}) as Record<string, unknown>,
   }));
 
-  // Build branch→value distributions for the three charts. Filter out
-  // branches that don't have a usable number for that specific metric so
-  // missing data doesn't render as a zero bar (which would imply the branch
-  // had zero latency, not "no samples").
+  // Build branch→value distributions for each chart. Filter out branches
+  // that don't have a usable number for that specific metric so missing
+  // data doesn't render as a zero bar (which would imply zero, not "no
+  // samples"). The tool-errors chart is the exception: zero is meaningful
+  // (a clean branch) so we always include it when the field is present.
   const avgLatencyDist: Record<string, number> = {};
   const outputCharsDist: Record<string, number> = {};
   const toolResultCharsDist: Record<string, number> = {};
+  const toolErrorsDist: Record<string, number> = {};
   for (const row of rows) {
     const total = row.value.total_latency_ms;
     const samples = row.value.latency_samples;
     if (typeof total === "number" && typeof samples === "number" && samples > 0) {
-      avgLatencyDist[row.branch] = Math.round(total / samples);
+      // ms → seconds, 1 decimal place
+      avgLatencyDist[row.branch] = Math.round(total / samples / 100) / 10;
     }
     if (typeof row.value.total_output_chars === "number") {
       outputCharsDist[row.branch] = row.value.total_output_chars;
     }
     if (typeof row.value.total_tool_result_chars === "number") {
       toolResultCharsDist[row.branch] = row.value.total_tool_result_chars;
+    }
+    if (typeof row.value.total_tool_errors === "number") {
+      toolErrorsDist[row.branch] = row.value.total_tool_errors;
     }
   }
 
@@ -569,7 +579,14 @@ function MetricsPanel({ items }: { items: MetricsItem[] }) {
       </div>
 
       {Object.keys(avgLatencyDist).length > 0 && (
-        <BarDistribution title="Avg latency (ms) per branch" dist={avgLatencyDist} />
+        <BarDistribution title="Avg latency (s) per branch" dist={avgLatencyDist} />
+      )}
+      {Object.keys(toolErrorsDist).length > 0 && (
+        <BarDistribution
+          title="Tool errors per branch"
+          dist={toolErrorsDist}
+          tone="warning"
+        />
       )}
       {Object.keys(outputCharsDist).length > 0 && (
         <BarDistribution title="Output chars per branch" dist={outputCharsDist} />
