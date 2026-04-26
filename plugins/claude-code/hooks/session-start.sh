@@ -146,6 +146,18 @@ except Exception:
   context="$ns_list"
 fi
 
+# Inject a flat listing of `default`-namespace keys (grouped by L1 prefix,
+# capped at 200) so the agent can see what the user remembers without paying
+# for a recall round-trip.
+default_keys_block=$(render_default_keys_compact 2>/dev/null || true)
+if [ -n "$default_keys_block" ]; then
+  if [ -n "$context" ]; then
+    context="${context}"$'\n\n'"${default_keys_block}"
+  else
+    context="$default_keys_block"
+  fi
+fi
+
 if [ -n "$unmerged" ]; then
   unmerged_block="# memoir — unmerged branches detected"$'\n'
   unmerged_block+="You have captured memories on these branches that aren't on main yet:"$'\n\n'

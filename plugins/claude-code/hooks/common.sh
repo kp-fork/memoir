@@ -602,6 +602,63 @@ concurrent_session_warning() {
   fi
 }
 
+# --- default namespace key listing ---
+
+# render_default_keys_compact — emit a compact list of keys in the `default`
+# namespace, grouped by L1 prefix, capped at 200 keys. Prints nothing when the
+# namespace is empty or the CLI is unavailable.
+#
+# This gives a fresh session a quick scan of "what does this user remember"
+# without paying for a recall round-trip; the agent can spot relevant keys at
+# a glance and only `memoir get` the ones that matter.
+render_default_keys_compact() {
+  [ -z "$MEMOIR_CMD" ] && return 0
+  [ ! -d "$MEMOIR_STORE_PATH/.git" ] && return 0
+
+  local keys_json
+  keys_json=$(memoir_json summarize --keys "*" -n default 2>/dev/null || true)
+  [ -z "$keys_json" ] && return 0
+
+  python3 -c "
+import json, sys
+from collections import defaultdict
+
+LIMIT = 200
+
+try:
+    obj = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+
+keys = obj.get('matching_keys', {}).get('default', []) or []
+if not keys:
+    sys.exit(0)
+
+keys = sorted(keys)
+total = len(keys)
+shown = keys[:LIMIT]
+truncated = total > LIMIT
+
+groups = defaultdict(list)
+for k in shown:
+    l1 = k.split('.', 1)[0]
+    groups[l1].append(k)
+
+print('# default namespace keys')
+if truncated:
+    print(f'({total} keys total — showing first {LIMIT}, grouped by L1 prefix)')
+else:
+    print(f'({total} keys, grouped by L1 prefix)')
+
+for l1 in sorted(groups.keys()):
+    items = groups[l1]
+    print('')
+    print(f'{l1} ({len(items)}):')
+    for k in items:
+        print(f'  - {k}')
+" "$keys_json" 2>/dev/null || true
+}
+
 # --- codebase:onboard rendering & meta update ---
 
 # render_codebase_onboard_compact — emit a compact block summarizing the
