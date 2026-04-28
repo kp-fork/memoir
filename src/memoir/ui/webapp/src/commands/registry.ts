@@ -138,35 +138,35 @@ register({
 });
 
 register({
-  name: "tree",
-  aliases: [],
-  summary: "Switch to the Tree (taxonomy) view",
-  usage: "/tree",
+  name: "outline",
+  aliases: ["tree"],
+  summary: "Switch to the Outline (taxonomy) view",
+  usage: "/outline",
   category: "navigation",
   tags: [],
   run() {
     useUI.getState().setActiveView("tree");
     useStore.getState().pushHistory({
-      input: "/tree",
+      input: "/outline",
       level: "info",
-      lines: ["Switched to Tree view."],
+      lines: ["Switched to Outline view."],
     });
   },
 });
 
 register({
-  name: "graph",
-  aliases: [],
-  summary: "Switch to the Graph view (taxonomy force-directed graph)",
-  usage: "/graph",
+  name: "map",
+  aliases: ["graph"],
+  summary: "Switch to the Map view (taxonomy force-directed graph)",
+  usage: "/map",
   category: "navigation",
   tags: [],
   run() {
     useUI.getState().setActiveView("graph");
     useStore.getState().pushHistory({
-      input: "/graph",
+      input: "/map",
       level: "info",
-      lines: ["Switched to Graph view. Drag to pan, scroll to zoom."],
+      lines: ["Switched to Map view. Drag to pan, scroll to zoom."],
     });
   },
 });
@@ -670,17 +670,12 @@ register({
     if (!path) return;
     try {
       const res = await api.blame(path, key, namespace);
-      const r = res as Record<string, unknown>;
-      const history = r.history;
-      const lines: string[] = [];
-      if (Array.isArray(history)) {
-        for (const entry of history.slice(0, 12)) {
-          const e = entry as Record<string, unknown>;
-          lines.push(
-            `${(e.short_hash ?? "").toString().padEnd(8)} ${e.author ?? ""}  ${(e.message ?? "").toString().slice(0, 60)}`,
-          );
-        }
-      }
+      const lines = res.entries
+        .slice(0, 12)
+        .map(
+          (e) =>
+            `${e.commit.padEnd(8)} ${e.author}  ${e.message.slice(0, 60)}`,
+        );
       useStore.getState().pushHistory({
         input,
         level: "info",
