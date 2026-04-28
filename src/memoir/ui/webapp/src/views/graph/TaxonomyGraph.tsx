@@ -45,8 +45,99 @@ export default function TaxonomyGraph() {
   const connected = useStore((s) => s.status === "connected");
   const namespaceFilter = useUI((s) => s.selectedNamespace);
   const select = useMemorySelection((s) => s.select);
+  const selected = useMemorySelection((s) => s.selected);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hovered, setHovered] = useState<GraphNode | null>(null);
+
+  // Refs into the live D3 selections so a second effect can apply
+  // selection-driven highlights without rebuilding the force simulation.
+  const nodeSelRef = useRef<d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown> | null>(null);
+  const virtualLinkLayerRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const virtualLinkSelRef = useRef<d3.Selection<SVGLineElement, GraphLink, SVGGElement, unknown> | null>(null);
+
+  // Highlight neighborhood of the currently-selected memory:
+  //   - directRelated: selected's own related_keys, in + out (dashed lines).
+  //   - relatedSet: directRelated ∪ each ancestor's related_keys (accent ring;
+  //     no dashed line — the dashed lines stay reserved for direct edges).
+  //   - ancestorSet: selected's taxonomy parents ∪ each relatedSet member's
+  //     parents (subtle neutral ring).
+  // Splitting paths on "." mirrors how the graph itself builds nodes, so a
+  // literal "/" inside a segment is preserved.
+  const { directRelated, relatedSet, ancestorSet } = useMemo(() => {
+    const empty = {
+      directRelated: new Set<string>(),
+      relatedSet: new Set<string>(),
+      ancestorSet: new Set<string>(),
+    };
+    if (!selected) return empty;
+    const ns = selected.namespace;
+    const idOf = (path: string) => `${ns}:${path}`;
+    const memByPath = new Map<string, Memory>();
+    for (const m of allMemories) {
+      if (m.namespace === ns) memByPath.set(m.path, m);
+    }
+    const ancestorsOfPath = (path: string): string[] => {
+      const out: string[] = [];
+      const segments = path.split(".");
+      for (let i = 1; i < segments.length; i++) {
+        out.push(segments.slice(0, i).join("."));
+      }
+      return out;
+    };
+    const readRelated = (m: Memory | undefined): string[] => {
+      const raw = m?.value?.related_keys;
+      if (!Array.isArray(raw)) return [];
+      return raw.filter(
+        (k): k is string => typeof k === "string" && k.length > 0,
+      );
+    };
+
+    // 1) Direct edges off the selected node (out + in scan).
+    const direct = new Set<string>();
+    for (const k of readRelated(selected)) direct.add(idOf(k));
+    for (const m of allMemories) {
+      if (m.namespace !== ns || m.path === selected.path) continue;
+      if (readRelated(m).includes(selected.path)) direct.add(idOf(m.path));
+    }
+
+    // 2) Selected's ancestor chain.
+    const ancestors = new Set<string>();
+    for (const a of ancestorsOfPath(selected.path)) ancestors.add(idOf(a));
+
+    // 3) Each direct sibling's ancestor chain (so the lineage of every
+    //    saved-together neighbor is also context, not dimmed).
+    for (const id of Array.from(direct)) {
+      const path = id.slice(ns.length + 1);
+      for (const a of ancestorsOfPath(path)) ancestors.add(idOf(a));
+    }
+
+    // 4) Each ancestor's own related_keys (when a memory lives exactly at
+    //    that ancestor path). These join the cluster without a dashed line.
+    const related = new Set<string>(direct);
+    for (const id of Array.from(ancestors)) {
+      const path = id.slice(ns.length + 1);
+      const mem = memByPath.get(path);
+      for (const k of readRelated(mem)) related.add(idOf(k));
+    }
+
+    // 5) Final hop: the ancestors of those just-added related entries —
+    //    so a 2-hop sibling's parents stay un-dimmed too. Bounded by depth,
+    //    so no runaway.
+    for (const id of Array.from(related)) {
+      const path = id.slice(ns.length + 1);
+      for (const a of ancestorsOfPath(path)) ancestors.add(idOf(a));
+    }
+
+    // Selected itself is its own bucket — drop from the supporting sets.
+    const selfId = idOf(selected.path);
+    direct.delete(selfId);
+    related.delete(selfId);
+    ancestors.delete(selfId);
+
+    return { directRelated: direct, relatedSet: related, ancestorSet: ancestors };
+  }, [selected, allMemories]);
+
+  const selectedId = selected ? `${selected.namespace}:${selected.path}` : null;
 
   const memories = useMemo(
     () =>
@@ -76,7 +167,21 @@ export default function TaxonomyGraph() {
         .on("zoom", (event) => zoomG.attr("transform", event.transform)),
     );
 
+    // Click on empty canvas area → clear the current memory selection
+    // (and therefore the highlight + dashed virtual links). Node clicks
+    // call event.stopPropagation() so they don't reach this handler.
+    root.on("click", () => {
+      if (useMemorySelection.getState().selected) {
+        useMemorySelection.getState().clear();
+      }
+    });
+
     const linkG = zoomG.append("g").attr("class", "tx-links");
+    // Virtual-link layer sits between real links and nodes so dashed
+    // sibling lines render above the parent→child structure but below
+    // the node circles + labels.
+    const virtualLinkG = zoomG.append("g").attr("class", "tx-virtual-links");
+    virtualLinkLayerRef.current = virtualLinkG;
     const nodeG = zoomG.append("g").attr("class", "tx-nodes");
 
     // Resolve link endpoints to node refs (d3-force mutates these in place
@@ -103,7 +208,10 @@ export default function TaxonomyGraph() {
       .append("g")
       .attr("class", (d) => `tx-node tier-${tierFor(d)}`)
       .style("cursor", (d) => (d.directMemories.length > 0 ? "pointer" : "default"))
-      .on("click", (_event, d) => {
+      .on("click", (event, d) => {
+        // Stop propagation so the SVG-level background-click handler
+        // (which clears selection) doesn't fire on node clicks.
+        event.stopPropagation();
         const memory = d.directMemories[0];
         if (memory) {
           select(memory);
@@ -187,6 +295,8 @@ export default function TaxonomyGraph() {
           .strength(0.9),
       );
 
+    nodeSelRef.current = nodeSel;
+
     simulation.on("tick", () => {
       linkSel
         .attr("x1", (d) => (d.source as GraphNode).x ?? 0)
@@ -194,12 +304,91 @@ export default function TaxonomyGraph() {
         .attr("x2", (d) => (d.target as GraphNode).x ?? 0)
         .attr("y2", (d) => (d.target as GraphNode).y ?? 0);
       nodeSel.attr("transform", (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      // Virtual links share the simulation tick — endpoints come from the
+      // same GraphNode refs, so their positions update in lockstep with
+      // the real layout without a separate animation loop.
+      const vSel = virtualLinkSelRef.current;
+      if (vSel) {
+        vSel
+          .attr("x1", (d) => (d.source as GraphNode).x ?? 0)
+          .attr("y1", (d) => (d.source as GraphNode).y ?? 0)
+          .attr("x2", (d) => (d.target as GraphNode).x ?? 0)
+          .attr("y2", (d) => (d.target as GraphNode).y ?? 0);
+      }
     });
 
     return () => {
       simulation.stop();
+      nodeSelRef.current = null;
+      virtualLinkLayerRef.current = null;
+      virtualLinkSelRef.current = null;
     };
   }, [nodes, links, select]);
+
+  // Selection-driven highlight + virtual-link overlay. Runs whenever the
+  // user selects a different memory; reuses the live D3 selections held
+  // in refs, so the force simulation continues uninterrupted.
+  useEffect(() => {
+    const nodeSel = nodeSelRef.current;
+    const layer = virtualLinkLayerRef.current;
+    if (!nodeSel || !layer) return;
+
+    nodeSel
+      .classed("tx-node-selected", (d) => selectedId === d.id)
+      .classed("tx-node-related", (d) => relatedSet.has(d.id))
+      // Ancestor ring is skipped on nodes that already qualify for the
+      // (louder) selected/related rings, so each node lands in exactly one
+      // visual bucket.
+      .classed(
+        "tx-node-ancestor",
+        (d) =>
+          ancestorSet.has(d.id) &&
+          d.id !== selectedId &&
+          !relatedSet.has(d.id),
+      )
+      .classed(
+        "tx-node-dimmed",
+        (d) =>
+          selectedId !== null &&
+          d.id !== selectedId &&
+          !relatedSet.has(d.id) &&
+          !ancestorSet.has(d.id),
+      );
+
+    // Build virtual-link data: one edge from selected node → each direct
+    // sibling (the saved-together pair). Transitive cluster members that
+    // joined via ancestor expansion get the accent ring but no dashed line.
+    let vData: GraphLink[] = [];
+    if (selectedId && directRelated.size > 0) {
+      const byId = new Map<string, GraphNode>();
+      nodeSel.each(function (d) {
+        byId.set(d.id, d);
+      });
+      const src = byId.get(selectedId);
+      if (src) {
+        for (const targetId of directRelated) {
+          const tgt = byId.get(targetId);
+          if (tgt) vData.push({ source: src, target: tgt });
+        }
+      }
+    }
+
+    const vSel = layer
+      .selectAll<SVGLineElement, GraphLink>("line.tx-virtual-link")
+      .data(vData, (d) => `${(d.source as GraphNode).id}->${(d.target as GraphNode).id}`);
+    vSel.exit().remove();
+    const vEnter = vSel.enter().append("line").attr("class", "tx-virtual-link");
+    virtualLinkSelRef.current = vEnter.merge(vSel);
+
+    // Seed positions immediately so the lines appear without waiting for
+    // the next simulation tick (which only fires when forces are still
+    // settling — a stable graph won't tick until something perturbs it).
+    virtualLinkSelRef.current
+      .attr("x1", (d) => (d.source as GraphNode).x ?? 0)
+      .attr("y1", (d) => (d.source as GraphNode).y ?? 0)
+      .attr("x2", (d) => (d.target as GraphNode).x ?? 0)
+      .attr("y2", (d) => (d.target as GraphNode).y ?? 0);
+  }, [selectedId, directRelated, relatedSet, ancestorSet, nodes]);
 
   if (!connected) return null;
 
