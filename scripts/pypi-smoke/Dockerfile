@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG MEMOIR_VERSION
 ENV MEMOIR_VERSION=${MEMOIR_VERSION}
 
-# [litellm] is a no-op extra in v0.1.7+ (litellm is a default dep) but
+# [litellm] is a no-op extra in v0.1.8+ (litellm is a default dep) but
 # required for v0.1.5 / v0.1.6 to enable the LLM code path. Keeping it on
 # the install line lets the same harness smoke any of those versions.
 RUN pip install --no-cache-dir "memoir-ai[litellm]==${MEMOIR_VERSION}"

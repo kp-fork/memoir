@@ -8,9 +8,9 @@ This guide will help you get started with Memoir in just a few minutes.
 pip install memoir-ai
 ```
 
-That's it. As of v0.1.7, `litellm` is a default dependency, so both
+That's it. As of v0.1.8, `litellm` is a default dependency, so both
 direct-path and LLM-backed commands work out of the box. (Prior to
-v0.1.7 you had to add the `[litellm]` extra explicitly.)
+v0.1.8 you had to add the `[litellm]` extra explicitly.)
 
 For development:
 
@@ -76,7 +76,7 @@ from memoir.llm import get_llm
 
 os.environ["ANTHROPIC_API_KEY"] = "your-api-key-here"
 
-# memoir.llm.get_llm() routes through litellm (a default dep as of v0.1.7).
+# memoir.llm.get_llm() routes through litellm (a default dep as of v0.1.8).
 llm = get_llm(model="claude-haiku-4-5", temperature=0)
 ```
 

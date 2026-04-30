@@ -33,7 +33,7 @@ make pre-commit
 
 ## Optional Dependencies
 
-As of **v0.1.7**, [`litellm`](https://docs.litellm.ai/) (the LLM router
+As of **v0.1.8**, [`litellm`](https://docs.litellm.ai/) (the LLM router
 used by `recall` and auto-classification in `remember`) is a **default
 dependency** — `pip install memoir-ai` is enough for both LLM-backed
 and direct-path commands.
