@@ -107,9 +107,9 @@ memoir remember "..." --model claude-sonnet-4-5
 export MEMOIR_LLM_MODEL=gpt-4o-mini
 ```
 
-As of v0.1.8, `litellm` is a default dependency, so `pip install
+As of v0.1.7, `litellm` is a default dependency, so `pip install
 memoir-ai` enables both LLM-backed and direct-path commands. (Prior
-to v0.1.8 you had to add the `[litellm]` extra explicitly.)
+to v0.1.7 you had to add the `[litellm]` extra explicitly.)
 
 ### `memoir get` — direct lookup by taxonomy path
 

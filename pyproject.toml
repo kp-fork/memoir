@@ -30,7 +30,7 @@ dependencies = [
     "typing-extensions>=4.0.0",
     "click>=8.0.0",
     # LLM router for recall + auto-classifying remember. Was an optional
-    # extra prior to v0.1.8; promoted to a default dep because memoir's
+    # extra prior to v0.1.7; promoted to a default dep because memoir's
     # primary value prop (LLM-backed semantic search) is unusable without it.
     # Users who don't need LLM features can `pip uninstall litellm` after
     # install — memoir's other features (-p paths, get, branch, etc.) keep
@@ -79,7 +79,7 @@ langmem = [
 ]
 
 # Kept as a no-op alias so `pip install 'memoir-ai[litellm]'` keeps working
-# for users / scripts that already use that form. As of v0.1.8, litellm is a
+# for users / scripts that already use that form. As of v0.1.7, litellm is a
 # default dependency. May be removed in v0.2.0.
 litellm = []
 
