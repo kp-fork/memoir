@@ -1,4 +1,4 @@
-import { listCommands, type CommandDef } from "./registry";
+import { isHiddenFromDiscovery, listCommands, type CommandDef } from "./registry";
 
 /**
  * Match an input string against the command registry for autocomplete.
@@ -19,7 +19,7 @@ export function matchCommands(input: string): CommandDef[] {
   // command. The autocomplete should get out of the way.
   if (tail.includes(" ")) return [];
 
-  const all = listCommands();
+  const all = listCommands().filter((def) => !isHiddenFromDiscovery(def));
   if (tail.length === 0) return all;
 
   const lower = tail.toLowerCase();

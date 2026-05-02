@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   categoryLabel,
+  isHiddenFromDiscovery,
   listCommands,
   tagLabel,
   type CommandCategory,
@@ -18,7 +19,9 @@ export default function CommandReferenceModal() {
   const [filter, setFilter] = useState("");
 
   const grouped = useMemo(() => {
-    const allCommands = listCommands();
+    // Hidden-from-discovery rule lives in the registry so help and
+    // autocomplete stay in sync — see isHiddenFromDiscovery.
+    const allCommands = listCommands().filter((d) => !isHiddenFromDiscovery(d));
     const matches = (def: CommandDef) => {
       if (!filter.trim()) return true;
       const needle = filter.trim().toLowerCase().replace(/^\//, "");

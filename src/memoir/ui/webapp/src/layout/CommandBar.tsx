@@ -14,11 +14,21 @@ export default function CommandBar() {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [autocompleteOpen, setAutocompleteOpen] = useState(true);
+  const [dismissedEntryId, setDismissedEntryId] = useState<number | null>(null);
   const status = useStore((s) => s.status);
   const history = useStore((s) => s.history);
   const openHelp = useUI((s) => s.openHelp);
 
   const historyInputs = history.map((e) => e.input);
+  const lastEntry = history[history.length - 1];
+  // Hide the output when the user starts typing a new command — both to
+  // free vertical space for the autocomplete dropdown and to signal that
+  // the previous result is no longer the focus. Showing again as soon as
+  // the input clears (after Enter or Escape).
+  const outputVisible =
+    lastEntry !== undefined &&
+    lastEntry.id !== dismissedEntryId &&
+    value.trim() === "";
 
   // Compute matches from current input. The dropdown only shows when:
   // - input starts with "/"
@@ -167,6 +177,36 @@ export default function CommandBar() {
       data-status={status}
       role="contentinfo"
     >
+      {outputVisible && (
+        <div
+          className="commandbar-output"
+          data-level={lastEntry.level}
+          role="region"
+          aria-label="Last command output"
+        >
+          <div className="commandbar-output-header">
+            <code className="commandbar-output-input">{lastEntry.input}</code>
+            <button
+              type="button"
+              className="commandbar-output-dismiss"
+              onClick={() => setDismissedEntryId(lastEntry.id)}
+              aria-label="Dismiss output"
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+          {lastEntry.lines.length > 0 ? (
+            <ul className="commandbar-output-lines">
+              {lastEntry.lines.map((line, i) => (
+                <li key={i} className="commandbar-output-line">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
       {showAutocomplete && (
         <CommandAutocomplete
           matches={matches}

@@ -477,16 +477,18 @@ register({
     const path = requireStorePath(input);
     if (!path) return;
     try {
-      const res = await api.recall(path, query);
+      const res = (await api.recall(path, query)) as Record<string, unknown>;
+      // Server returns { success, results: [...], metadata } — older code
+      // looked for `memories` here and silently always reported zero hits.
+      const hits = (res.results ?? res.memories) as unknown;
       const lines: string[] = [];
-      const memories = (res as Record<string, unknown>).memories;
-      if (Array.isArray(memories) && memories.length > 0) {
-        for (const m of memories.slice(0, 10)) {
+      if (Array.isArray(hits) && hits.length > 0) {
+        for (const m of hits.slice(0, 10)) {
           const r = m as Record<string, unknown>;
-          const path = (r.path ?? r.key ?? "?") as string;
+          const hitPath = (r.path ?? r.key ?? "?") as string;
           const content = (r.content ?? "") as string;
           const snippet = content.split("\n")[0].slice(0, 80);
-          lines.push(`${path}  ${snippet}`);
+          lines.push(`${hitPath}  ${snippet}`);
         }
       } else {
         lines.push("No memories matched.");
@@ -948,6 +950,33 @@ export function commandNames(): string[] {
   const seen = new Set<string>();
   for (const def of registry.values()) seen.add(def.name);
   return Array.from(seen).sort();
+}
+
+/**
+ * Categories whose commands are excluded from the help modal and the
+ * autocomplete dropdown. Commands still execute when typed in full — this
+ * just hides them from discovery surfaces so the curated set stays focused.
+ */
+const HIDDEN_CATEGORIES: ReadonlySet<CommandCategory> = new Set([
+  "system",
+  "navigation",
+]);
+const HIDDEN_NAMES: ReadonlySet<string> = new Set([
+  "checkout",
+  "code",
+  "connect",
+  "demo",
+  "deselect",
+  "disconnect",
+  "proof",
+  "summarize",
+  "time-travel",
+  "verify",
+]);
+
+/** True when this command should be hidden from help and autocomplete. */
+export function isHiddenFromDiscovery(def: CommandDef): boolean {
+  return HIDDEN_CATEGORIES.has(def.category) || HIDDEN_NAMES.has(def.name);
 }
 
 /**
