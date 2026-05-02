@@ -81,7 +81,8 @@ def remember(
     """
     if not ctx.store_path:
         ctx.error(
-            "No store configured. Use 'memoir connect <path>' first.", EXIT_NO_STORE
+            "No store configured. Pass -s <path>, set MEMOIR_STORE, or cd into a memoir store.",
+            EXIT_NO_STORE,
         )
 
     from memoir.services.memory_service import MemoryService
@@ -169,7 +170,8 @@ def recall(
     """
     if not ctx.store_path:
         ctx.error(
-            "No store configured. Use 'memoir connect <path>' first.", EXIT_NO_STORE
+            "No store configured. Pass -s <path>, set MEMOIR_STORE, or cd into a memoir store.",
+            EXIT_NO_STORE,
         )
 
     from memoir.services.memory_service import MemoryService
@@ -188,12 +190,17 @@ def recall(
                 click.echo("No memories found.")
             else:
                 for i, memory in enumerate(result.memories, 1):
-                    score = memory.get("score", memory.get("relevance", 0))
+                    # `result.memories` is a list[Memory] (dataclass at
+                    # services/models.py:57) — fields are `relevance_score`,
+                    # `path`, `content`. Use attribute access; the prior
+                    # `memory.get(...)` form crashed with "'Memory' object has
+                    # no attribute 'get'" and looked up wrong keys anyway.
+                    score = memory.relevance_score
                     if score < threshold:
                         continue
 
-                    path = memory.get("path", memory.get("key", "unknown"))
-                    content = memory.get("content", memory.get("value", ""))
+                    path = memory.path or "unknown"
+                    content = memory.content
 
                     # Truncate content for display
                     if isinstance(content, dict):
@@ -240,7 +247,8 @@ def get_memory(ctx: MemoirContext, keys: tuple, namespace: str):
     """
     if not ctx.store_path:
         ctx.error(
-            "No store configured. Use 'memoir connect <path>' first.", EXIT_NO_STORE
+            "No store configured. Pass -s <path>, set MEMOIR_STORE, or cd into a memoir store.",
+            EXIT_NO_STORE,
         )
 
     from memoir.services.memory_service import MemoryService
@@ -313,7 +321,8 @@ def forget(ctx: MemoirContext, key: str, namespace: str, force: bool):
     """
     if not ctx.store_path:
         ctx.error(
-            "No store configured. Use 'memoir connect <path>' first.", EXIT_NO_STORE
+            "No store configured. Pass -s <path>, set MEMOIR_STORE, or cd into a memoir store.",
+            EXIT_NO_STORE,
         )
 
     # Confirm unless --force is used

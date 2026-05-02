@@ -4,6 +4,7 @@ import tempfile
 
 import pytest
 
+from memoir.services.store_service import StoreService
 from memoir.store.prolly_adapter import ProllyTreeStore
 from memoir.taxonomy import TaxonomyLoader
 
@@ -15,6 +16,7 @@ class TestTaxonomyLoaderIntegration:
     def temp_store(self):
         """Create a temporary store for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            StoreService(tmpdir).create_store(tmpdir)
             store = ProllyTreeStore(tmpdir)
             yield store
 
@@ -128,6 +130,7 @@ class TestTaxonomyLoaderWithExternalFiles:
     def temp_store(self):
         """Create a temporary store for testing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            StoreService(tmpdir).create_store(tmpdir)
             store = ProllyTreeStore(tmpdir)
             yield store
 
@@ -204,6 +207,7 @@ class TestClassifierWithTaxonomyLoader:
     def temp_store(self):
         """Create a temporary store with taxonomy."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            StoreService(tmpdir).create_store(tmpdir)
             store = ProllyTreeStore(tmpdir)
             loader = TaxonomyLoader(store)
             loader.init_store(include_builtin=True)
@@ -259,6 +263,7 @@ class TestSearchEngineWithTaxonomyLoader:
     def temp_store(self):
         """Create a temporary store with taxonomy."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            StoreService(tmpdir).create_store(tmpdir)
             store = ProllyTreeStore(tmpdir)
             loader = TaxonomyLoader(store)
             loader.init_store(include_builtin=True)

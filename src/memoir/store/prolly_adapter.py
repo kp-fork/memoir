@@ -37,6 +37,44 @@ class MemoryItem(BaseModel):
     confidence: float = Field(default=1.0, description="Classification confidence")
 
 
+class _CwdLockedTree:
+    """Proxy that chdir's into the store path before any tree method call,
+    then restores the caller's cwd. Workaround for prollytree's Rust binding,
+    which uses cwd (not the absolute path passed to its constructor) to
+    locate the enclosing git repo on every operation — not just at
+    construction. Without this wrapper, callers in non-git cwds hit
+    "Not in a git repository" on `.put()`/`.insert()`/`.commit()` even when
+    the tree was constructed successfully via the in-init chdir below.
+
+    Wrapping once at __init__ is uniformly cheaper than annotating every
+    public method that touches `self.tree` (28+ call sites).
+    """
+
+    def __init__(self, tree: Any, store_path: Path):
+        # Underscore prefix on the inner attrs so __getattr__ never recurses
+        # into them (it only fires for missing names).
+        object.__setattr__(self, "_tree", tree)
+        object.__setattr__(self, "_store_path", str(store_path))
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._tree, name)
+        if not callable(attr):
+            return attr
+        store_path = self._store_path
+
+        def _wrapped(*args, **kwargs):
+            import os as _os
+
+            saved = _os.getcwd()
+            try:
+                _os.chdir(store_path)
+                return attr(*args, **kwargs)
+            finally:
+                _os.chdir(saved)
+
+        return _wrapped
+
+
 class AggregatedMemory(BaseModel):
     """Represents aggregated memories at a semantic path."""
 
@@ -75,8 +113,15 @@ class ProllyTreeStore(BaseStore):
         Storage layer is responsible only for storing and retrieving data.
         Classification is handled by higher layers (memory manager).
 
+        ProllyTreeStore is strict: it opens an existing memoir store and
+        refuses paths that aren't one yet. Use ``StoreService.create_store``
+        (or ``memoir new``) to bootstrap a fresh store. Single init path =
+        no surprise side-effects from running `memoir remember` in a random
+        cwd.
+
         Args:
-            path: Path to ProllyTree database
+            path: Path to an existing memoir store (must contain a ``.git``
+                directory when ``enable_versioning`` is True).
             enable_versioning: Whether to enable git-like versioning
             auto_commit: Whether to automatically commit on each put/delete operation
             cache_size: Size of internal caches
@@ -86,38 +131,12 @@ class ProllyTreeStore(BaseStore):
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
 
-        # Initialize git repository if using versioning and not exists
-        if enable_versioning:
-            import os
-            import subprocess
-
-            if not os.path.exists(os.path.join(self.path, ".git")):
-                subprocess.run(
-                    ["git", "init", "--quiet"],
-                    cwd=self.path,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-
-                # Create initial commit
-                readme_path = os.path.join(self.path, "README.md")
-                with open(readme_path, "w") as f:
-                    f.write("# Memoir Store\n")
-                subprocess.run(
-                    ["git", "add", "."],
-                    cwd=self.path,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                subprocess.run(
-                    ["git", "commit", "-m", "Initial Commit -- ProllyTree Store"],
-                    cwd=self.path,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+        if enable_versioning and not (self.path / ".git").exists():
+            raise FileNotFoundError(
+                f"Not a memoir store: {self.path} (no .git directory). "
+                f"Create one with `memoir new <path>` first, or pass "
+                f"-s/--store / set MEMOIR_STORE / cd into an existing store."
+            )
 
         # Initialize ProllyTree
         if enable_versioning:
@@ -127,20 +146,21 @@ class ProllyTreeStore(BaseStore):
             # VersionedKvStore (prollytree Rust binding) uses cwd to locate the
             # enclosing git repository even when handed an absolute path —
             # which means callers in non-git cwds (e.g. /tmp, ~/.memoir) get
-            # "Not in a git repository" errors. Workaround: chdir into the
-            # store before constructing, then restore so caller's cwd stays
-            # clean. Once constructed, the tree retains its handle and works
-            # from any cwd.
+            # "Not in a git repository" errors. Construction needs a chdir;
+            # so do per-operation calls (`.insert`/`.update`/`.commit`/`.get`).
+            # We chdir here for the constructor, then wrap the tree in
+            # _CwdLockedTree so every later method call also chdir's first.
             import os as _os
 
             _saved_cwd = _os.getcwd()
             try:
                 _os.chdir(str(self.path))
-                self.tree = VersionedKvStore(str(data_dir))
+                _raw_tree = VersionedKvStore(str(data_dir))
             finally:
                 _os.chdir(_saved_cwd)
+            self.tree = _CwdLockedTree(_raw_tree, self.path)
         else:
-            # Use memory mode for simplicity (can be changed to 'file' for persistence)
+            # Memory mode doesn't touch git, so no cwd wrapper needed.
             self.tree = ProllyTree("memory")
 
         self.enable_versioning = enable_versioning

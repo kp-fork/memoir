@@ -88,6 +88,12 @@ class ProllyTreeMemoryStoreManager(MemoryStoreManager):
             self.prolly_store = prolly_store
         elif prolly_path is not None:
             # Create store from path (fallback)
+            # Path-based construction is the SDK fallback / auto-create
+            # entry point. ProllyTreeStore itself is strict, so bootstrap
+            # the store via StoreService first if it doesn't exist yet.
+            from memoir.services.store_service import StoreService
+
+            StoreService(prolly_path).create_store(prolly_path)
             self.prolly_store = ProllyTreeStore(
                 path=prolly_path,
                 enable_versioning=enable_versioning,

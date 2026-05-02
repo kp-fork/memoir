@@ -16,6 +16,7 @@ from memoir.search.intelligent import (
     _filter_keys,
     _group_by_depth,
 )
+from memoir.services.store_service import StoreService
 from memoir.store.prolly_adapter import ProllyTreeStore
 
 
@@ -40,6 +41,7 @@ def _canned_llm_response(text: str):
 @pytest.fixture
 def temp_store():
     with tempfile.TemporaryDirectory() as tmpdir:
+        StoreService(tmpdir).create_store(tmpdir)
         store = ProllyTreeStore(tmpdir)
         yield store
 
