@@ -93,7 +93,12 @@ memoir get preferences.coding.style
 
 # 5. Semantic search (LLM-backed)
 memoir recall "what does Sarah prefer?"
+
+# 6. Open the visual explorer (auto-opens in your browser)
+memoir ui
 ```
+
+> Curious what the UI looks like before installing? Browse the [UI Gallery](https://www.memoir-ai.dev/demos/).
 
 Prefer a different model? `memoir recall "..." --model gpt-4o-mini` (needs `OPENAI_API_KEY`), or set `MEMOIR_LLM_MODEL` in your shell. Resolution order: `--model` flag → `MEMOIR_LLM_MODEL` → `claude-haiku-4-5`.
 

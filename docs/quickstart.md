@@ -55,7 +55,12 @@ memoir get preferences.coding.style
 
 # 5. Semantic search (LLM-backed)
 memoir recall "what does Sarah prefer?"
+
+# 6. Open the visual explorer (auto-opens in your browser)
+memoir ui
 ```
+
+Curious what the UI looks like before installing? Browse the [UI Gallery](https://www.memoir-ai.dev/demos/) for screenshots of the Tree, Graph, Timeline, and Places views.
 
 ### Picking a different model
 
