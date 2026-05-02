@@ -95,6 +95,13 @@ skip_case() {
 
 STORE=/tmp/store
 
+# Memoir's resolution chain (after the 0.1.8 strict-CLI rework) is:
+#   -s flag → MEMOIR_STORE env → cwd
+# There is no global default file any more (memoir connect was removed). Set
+# the env var once here so the subsequent bare `memoir <cmd>` cases find the
+# store the same way a real user would after `export MEMOIR_STORE=…`.
+export MEMOIR_STORE="$STORE"
+
 case_cli_on_path()       { command -v memoir >/dev/null || { echo "memoir not on PATH"; return 1; }; }
 
 case_cli_version_matches() {
@@ -111,11 +118,11 @@ case_cli_new_creates_git_repo() {
   [[ -d "$STORE/.git" ]] || { echo ".git not created at $STORE"; return 1; }
 }
 
-case_cli_connect_persists() {
-  memoir connect "$STORE" >/dev/null || { echo "connect failed"; return 1; }
-  # status without -s / MEMOIR_STORE should still find the connected store
-  unset MEMOIR_STORE
-  memoir status >/dev/null || { echo "status after connect failed"; return 1; }
+case_cli_status_via_env() {
+  # bare `memoir status` (no -s) resolves the store via MEMOIR_STORE.
+  # `memoir connect` was removed in 0.1.8 along with the global default; the
+  # env var is the supported per-shell setup.
+  memoir status >/dev/null || { echo "status via MEMOIR_STORE failed"; return 1; }
 }
 
 case_cli_status_json_is_valid() {
@@ -187,7 +194,7 @@ case_cli_works_inside_worktree() {
     git init -q && git commit -q --allow-empty -m init
     git worktree add -q "$wt" -b smoke-wt-branch >/dev/null
     cd "$wt"
-    memoir new "$store" --no-connect >/dev/null \
+    memoir new "$store" >/dev/null \
       || { echo "memoir new failed inside worktree"; exit 1; }
     memoir -s "$store" remember "tabs over spaces" -p preferences.coding.style >/dev/null \
       || { echo "remember failed inside worktree"; exit 1; }
@@ -206,7 +213,7 @@ case_cli_status_json_valid_in_worktree() {
     git init -q && git commit -q --allow-empty -m init
     git worktree add -q "$wt" -b smoke-wts-branch >/dev/null
     cd "$wt"
-    memoir new "$store" --no-connect >/dev/null \
+    memoir new "$store" >/dev/null \
       || { echo "memoir new failed"; exit 1; }
     out=$(memoir --json -s "$store" status 2>&1) \
       || { echo "status --json failed: $out"; exit 1; }
@@ -316,7 +323,7 @@ echo "== Test Results =="
 run_case "cli-on-path"                  case_cli_on_path
 run_case "cli-version-matches"          case_cli_version_matches
 run_case "cli-new-creates-git-repo"     case_cli_new_creates_git_repo
-run_case "cli-connect-persists"         case_cli_connect_persists
+run_case "cli-status-via-env"           case_cli_status_via_env
 run_case "cli-status-json-is-valid"     case_cli_status_json_is_valid
 run_case "cli-remember-three-keys"      case_cli_remember_three_keys
 run_case "cli-get-each"                 case_cli_get_each
