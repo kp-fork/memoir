@@ -4,13 +4,23 @@ This guide will help you get started with Memoir in just a few minutes.
 
 ## Installation
 
+Three options, in order of speed:
+
 ```bash
+# Try without installing (one-shot venv managed by uv)
+uvx --from memoir-ai memoir --help
+
+# Persistent install with uv — faster than pip, isolates the CLI
+uv tool install memoir-ai
+
+# Universal fallback
 pip install memoir-ai
 ```
 
-That's it. As of v0.1.7, `litellm` is a default dependency, so both
-direct-path and LLM-backed commands work out of the box. (Prior to
-v0.1.7 you had to add the `[litellm]` extra explicitly.)
+As of v0.1.7, `litellm` is a default dependency, so both direct-path and
+LLM-backed commands work out of the box. (Prior to v0.1.7 you had to add
+the `[litellm]` extra explicitly.) Don't have uv? Install it with
+`curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 For development:
 
