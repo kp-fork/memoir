@@ -42,6 +42,8 @@ export default function MemoryDetail({ memory }: MemoryDetailProps) {
   const [rewriting, setRewriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"key" | "namespace" | null>(null);
+  const [confirmingForget, setConfirmingForget] = useState(false);
+  const [forgetting, setForgetting] = useState(false);
 
   // Reset local edit state whenever the user picks a different memory.
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function MemoryDetail({ memory }: MemoryDetailProps) {
     setInstructions("");
     setEditSource("manual");
     setError(null);
+    setConfirmingForget(false);
+    setForgetting(false);
   }, [memory.key]);
 
   const dirty = content !== (memory.content ?? "");
@@ -117,6 +121,31 @@ export default function MemoryDetail({ memory }: MemoryDetailProps) {
   const onContentChange = (next: string) => {
     setContent(next);
     if (editSource === "llm") setEditSource("llm+manual");
+  };
+
+  const onForgetClick = () => {
+    setConfirmingForget((prev) => !prev);
+    setError(null);
+  };
+
+  const onConfirmForget = async () => {
+    if (!storePath) return;
+    setForgetting(true);
+    setError(null);
+    try {
+      await api.forget(storePath, memory.path, memory.namespace);
+      // The deleted key must vanish from the rest of the UI before we pop
+      // this panel, so refresh the store first.
+      await useStore.getState().refresh();
+      useMemorySelection.getState().clear();
+      useUI.getState().popPanel();
+    } catch (err) {
+      setError(err instanceof MemoirApiError ? err.message : String(err));
+      setForgetting(false);
+    }
+    // No finally — on success we've already popped the panel and unmounted,
+    // so leaving forgetting=true is harmless and avoids a setState-after-
+    // unmount warning.
   };
 
   return (
@@ -197,8 +226,9 @@ export default function MemoryDetail({ memory }: MemoryDetailProps) {
         <p className="drawer-error">{error}</p>
       )}
 
-      {/* Save / Cancel — Save is hidden in readonly mode because the
-       * backend will reject /api/update-memory without --no-readonly. */}
+      {/* Save / Cancel / Forget — Save+Forget gated client-side in readonly
+       * mode. Backend currently has no readonly enforcement; the UI honors
+       * the contract and disables destructive actions when readonly. */}
       <section className="drawer-panel-section memory-action-row">
         {!writable && (
           <span
@@ -218,13 +248,55 @@ export default function MemoryDetail({ memory }: MemoryDetailProps) {
         </button>
         <button
           type="button"
-          className="btn btn-primary btn-sm"
+          className="btn btn-sm memory-update-btn"
           onClick={onSave}
           disabled={!dirty || saving || !writable}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Updating…" : "Update"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm memory-forget-btn"
+          onClick={onForgetClick}
+          disabled={!writable || saving || forgetting}
+          title="Delete this memory and land a forget commit"
+        >
+          {confirmingForget ? "Cancel forget" : "Forget"}
         </button>
       </section>
+
+      {confirmingForget && (
+        <div className="memory-forget-confirm" role="alertdialog" aria-label="Confirm forget">
+          <div className="memory-forget-confirm-text">
+            <strong className="memory-forget-confirm-title">
+              Forget <code>{memory.key}</code>?
+            </strong>
+            <p className="memory-forget-confirm-hint">
+              This writes a forget commit and removes the key from the current
+              branch. You can recover it via the Commits tab.
+            </p>
+          </div>
+          <div className="memory-forget-confirm-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setConfirmingForget(false)}
+              disabled={forgetting}
+              autoFocus
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm memory-forget-confirm-yes"
+              onClick={onConfirmForget}
+              disabled={forgetting}
+            >
+              {forgetting ? "Forgetting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Meta footer */}
       <section className="drawer-panel-section memory-meta-footer">

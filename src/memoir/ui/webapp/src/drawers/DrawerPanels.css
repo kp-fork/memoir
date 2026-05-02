@@ -735,6 +735,98 @@
   color: var(--warning);
 }
 
+.memory-update-btn {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+
+.memory-update-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+}
+
+.memory-forget-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: var(--danger);
+}
+
+.memory-forget-btn:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: var(--danger);
+}
+
+.memory-forget-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-1);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  border-radius: var(--radius-md);
+  animation: memory-forget-confirm-slide 140ms var(--ease-out);
+}
+
+@keyframes memory-forget-confirm-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.memory-forget-confirm-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.memory-forget-confirm-title {
+  display: block;
+  color: var(--fg-0);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.memory-forget-confirm-title code {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+}
+
+.memory-forget-confirm-hint {
+  margin-top: 0.25rem;
+  color: var(--fg-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+
+.memory-forget-confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.memory-forget-confirm-yes {
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.memory-forget-confirm-yes:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.25);
+  color: var(--danger);
+}
+
 .memory-meta-footer {
   border-top: 1px solid var(--border);
   padding-top: var(--space-4);
