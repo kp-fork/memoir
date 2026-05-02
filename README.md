@@ -65,7 +65,7 @@ Inside a Claude Code session, run:
 /plugin install memoir@memoir
 ```
 
-The plugin registers hooks for session start, user-prompt-submit, and stop, so your project gets automatic context injection and auto-captured memories. Each project gets its own store under `~/.memoir/memoir_<hash>/` (override with `MEMOIR_STORE`). See the [Claude Code plugin guide](https://zhangfengcdt.github.io/memoir/claude_code/) for the full slash-command and hook reference.
+No need to `pip install memoir-ai` first — if you have `uv` (or `uvx`) on PATH, the plugin will fetch the CLI on demand via `uvx --from memoir-ai memoir`. It registers hooks for session start, user-prompt-submit, and stop, so your project gets automatic context injection and auto-captured memories. See the [Claude Code plugin guide](https://zhangfengcdt.github.io/memoir/claude_code/) for the full slash-command and hook reference.
 
 ## Quick look
 
