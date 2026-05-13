@@ -63,6 +63,37 @@ To remove your local install:
 
 For prompt-template debugging (Stop hook auto-capture, etc.), see the prompt-harness section in [`CLAUDE.md`](./CLAUDE.md).
 
+## Testing the Codex plugin from local source
+
+The Codex plugin lives under `plugins/codex/`, with the marketplace manifest at `.agents/plugins/marketplace.json`.
+
+```bash
+codex plugin marketplace add /absolute/path/to/memoir
+```
+
+That local command is for source testing. After merge, user-facing installs should use the repo marketplace:
+
+```text
+/plugins
+```
+
+Add the `memoir` marketplace from `zhangfengcdt/memoir`, then install `memoir`. The equivalent CLI registration is:
+
+```bash
+codex plugin marketplace add zhangfengcdt/memoir
+```
+
+Enable hooks with `[features].hooks = true` or a one-off `--enable hooks` run. The plugin resolves the Memoir CLI through `memoir` on `PATH`, `uvx --from memoir-ai==<pinned> memoir`, or `uv tool run --from memoir-ai==<pinned> memoir`, so a separate `pip install memoir-ai` is not required when `uv` is available. Use `gpt-5.4` for PR smoke validation:
+
+```bash
+MEMOIR_STORE=/tmp/memoir-smoke-store \
+MEMOIR_CODEX_MODEL=gpt-5.4 \
+codex exec --enable hooks --skip-git-repo-check -m gpt-5.4 \
+  "Use Memoir and report status."
+```
+
+Record any smoke evidence under `/tmp`, then clean the disposable project/store before committing. Do not commit local Codex config, generated Memoir stores, or `/tmp` evidence unless a maintainer explicitly asks for a sanitized artifact.
+
 ## Reporting issues
 
 - **Bugs:** open an issue with a minimal reproducer (CLI command or short script) and the output you got vs. expected.

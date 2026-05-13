@@ -81,6 +81,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 That's enough — the plugin handles the rest. It registers hooks for session start, user-prompt-submit, and stop, so your project gets automatic context injection and auto-captured memories. See the [Claude Code plugin guide](https://zhangfengcdt.github.io/memoir/claude_code/) for the full slash-command and hook reference.
 
+## Install for Codex
+
+Memoir's Codex plugin is distributed from this repository's Codex marketplace. In Codex, run `/plugins`, add the `memoir` marketplace from `zhangfengcdt/memoir`, restart Codex if prompted, then choose **Memoir Plugins** and install `memoir`.
+
+You can also register the marketplace from the CLI:
+
+```bash
+codex plugin marketplace add zhangfengcdt/memoir
+```
+
+While developing from a local checkout, use `codex plugin marketplace add /absolute/path/to/memoir` instead. The repo marketplace lives at `.agents/plugins/marketplace.json` and points Codex at `./plugins/codex`, relative to the repository root.
+
+**No manual `pip install` needed if you have `uv` on PATH** — the Codex plugin resolves the Memoir CLI the same way the Claude Code plugin does: `memoir` on `PATH` first, then `uvx --from memoir-ai==<pinned> memoir`, then `uv tool run --from memoir-ai==<pinned> memoir`.
+
+Enable Codex hooks with `[features].hooks = true` in `~/.codex/config.toml` or pass `--enable hooks` for a smoke run. The Codex plugin ships lifecycle hooks; `memory-recall`, `memoir-onboard`, `memoir-remember`, `memoir-status`, and `memoir-ui` skills; Codex-specific transcript parsing; and local marketplace metadata. See the [Codex plugin guide](https://zhangfengcdt.github.io/memoir/codex/) for setup, limitations, and the real Codex smoke-test flow.
+
 ## Quick look
 
 Memoir's CLI defaults to Anthropic **`claude-haiku-4-5`** as of v0.1.6 — set your key first:
@@ -126,6 +142,7 @@ Full docs live at **[zhangfengcdt.github.io/memoir](https://zhangfengcdt.github.
 - [CLI Reference](https://zhangfengcdt.github.io/memoir/cli/) — every command, flag, and exit code.
 - [UI](https://zhangfengcdt.github.io/memoir/ui/) — the visual explorer (Tree / Graph / Timeline / Places + `/stats`).
 - [Claude Code](https://zhangfengcdt.github.io/memoir/claude_code/) — plugin install, slash commands, hooks, lifecycle.
+- [Codex](https://zhangfengcdt.github.io/memoir/codex/) — plugin install, hooks, skills, transcript parsing, smoke-test evidence.
 - [Architecture](https://zhangfengcdt.github.io/memoir/architecture/) — taxonomy, classifier, store, search.
 - [API Reference](https://zhangfengcdt.github.io/memoir/api/memoir/) — Python SDK.
 - [Examples](https://zhangfengcdt.github.io/memoir/examples/) — context branching, memory debugging, reproducible testing.
