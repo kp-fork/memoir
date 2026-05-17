@@ -15,6 +15,9 @@ from langgraph.store.base import BaseStore
 from prollytree import ProllyTree, VersionedKvStore
 from pydantic import BaseModel, Field
 
+from memoir.store.backend import is_memoir_store, resolve_backend, write_backend_lock
+from memoir.store.git_safety import harden_git_config
+
 # Storage layer doesn't import classification or search modules
 # These are handled by higher layers
 
@@ -138,8 +141,51 @@ class ProllyTreeStore(BaseStore):
                 f"-s/--store / set MEMOIR_STORE / cd into an existing store."
             )
 
+        # Defense-in-depth: refuse to open a path that is a git repository
+        # with existing commits but no memoir-specific markers. ``data/``
+        # alone is *not* a memoir marker — many project repos have one and
+        # accepting it lets read-side callers (status, recall, UI server's
+        # cwd fallback, etc.) lazy-materialize a fresh prolly tree inside
+        # an unrelated project repo. ``is_memoir_store`` checks for the
+        # backend lock, ``.git/prolly/``, or ``data/prolly_config_tree_config``.
+        if enable_versioning and not is_memoir_store(self.path):
+            import subprocess as _subprocess
+
+            head_check = _subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.path),
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    "HEAD",
+                ],
+                capture_output=True,
+            )
+            if head_check.returncode == 0:
+                raise FileNotFoundError(
+                    f"Not a memoir store: {self.path} is a git repository "
+                    f"with existing commits but no memoir markers "
+                    f"(no .git/memoir-backend, no .git/prolly/, no "
+                    f"data/prolly_config_tree_config). Use `memoir new "
+                    f"<path>` to create a memoir store explicitly, or "
+                    f"point at an existing one."
+                )
+
         # Initialize ProllyTree
         if enable_versioning:
+            # Apply gc-safety configs to the .git of any memoir store opened
+            # here. Idempotent, so retrofits legacy git-backed stores on
+            # first open by a memoir version that includes this helper.
+            harden_git_config(self.path)
+
+            # Resolve the storage backend BEFORE creating data/ so the legacy
+            # detector sees the on-disk state as it is now. Precedence:
+            # per-store lock > on-disk detection > env var > File default.
+            backend = resolve_backend(self.path)
+            logger.debug("opening store at %s with backend=%s", self.path, backend)
+
             # Create data subdirectory for VersionedKvStore
             data_dir = self.path / "data"
             data_dir.mkdir(exist_ok=True)
@@ -152,13 +198,36 @@ class ProllyTreeStore(BaseStore):
             # _CwdLockedTree so every later method call also chdir's first.
             import os as _os
 
+            # `VersionedKvStore(path, backend)` *initializes* a fresh tree
+            # (running an "Initial commit") on every call — fine for first
+            # creation, but overwrites the root_hash in
+            # ``data/prolly_config_tree_config`` on a reopen, which silently
+            # drops all prior data on the File backend. Use ``.open()`` when
+            # the config already exists; the constructor only when this is
+            # a brand-new dataset directory.
+            prolly_config = data_dir / "prolly_config_tree_config"
             _saved_cwd = _os.getcwd()
             try:
                 _os.chdir(str(self.path))
-                _raw_tree = VersionedKvStore(str(data_dir))
+                if prolly_config.exists():
+                    _raw_tree = VersionedKvStore.open(str(data_dir), backend)
+                    fresh_init = False
+                else:
+                    _raw_tree = VersionedKvStore(str(data_dir), backend)
+                    fresh_init = True
             finally:
                 _os.chdir(_saved_cwd)
             self.tree = _CwdLockedTree(_raw_tree, self.path)
+
+            # If we just initialized a fresh prollytree (no prior config),
+            # persist the resolved backend so future opens go straight to
+            # the lock rather than re-running detection/env-default. This
+            # covers direct ProllyTreeStore callers (e.g. ui/initializer.py)
+            # that bypass StoreService.create_store. For callers that did
+            # come through StoreService, the lock is already written with
+            # the same value — this is idempotent.
+            if fresh_init and not (self.path / ".git" / "memoir-backend").exists():
+                write_backend_lock(self.path, backend)
         else:
             # Memory mode doesn't touch git, so no cwd wrapper needed.
             self.tree = ProllyTree("memory")

@@ -126,6 +126,42 @@ class TestStoreCommands:
         assert data["success"] is True
         assert "path" in data
 
+    def test_new_default_backend_is_file(self, runner, temp_store, monkeypatch):
+        """`memoir new <path>` without --backend writes file lock."""
+        shutil.rmtree(temp_store)
+        monkeypatch.delenv("MEMOIR_PROLLY_BACKEND", raising=False)
+
+        result = runner.invoke(cli, ["new", temp_store])
+        assert result.exit_code == 0
+        with open(os.path.join(temp_store, ".git", "memoir-backend")) as f:
+            assert f.read().strip() == "file"
+
+    def test_new_backend_git_flag(self, runner, temp_store):
+        """`memoir new <path> --backend git` writes a git lock."""
+        shutil.rmtree(temp_store)
+
+        result = runner.invoke(cli, ["new", temp_store, "--backend", "git"])
+        assert result.exit_code == 0
+        with open(os.path.join(temp_store, ".git", "memoir-backend")) as f:
+            assert f.read().strip() == "git"
+
+    def test_new_backend_file_flag(self, runner, temp_store):
+        """`memoir new <path> --backend file` writes a file lock."""
+        shutil.rmtree(temp_store)
+
+        result = runner.invoke(cli, ["new", temp_store, "--backend", "file"])
+        assert result.exit_code == 0
+        with open(os.path.join(temp_store, ".git", "memoir-backend")) as f:
+            assert f.read().strip() == "file"
+
+    def test_new_backend_invalid_flag(self, runner, temp_store):
+        """`memoir new <path> --backend bogus` is rejected by click."""
+        shutil.rmtree(temp_store)
+
+        result = runner.invoke(cli, ["new", temp_store, "--backend", "bogus"])
+        assert result.exit_code != 0
+        assert "bogus" in result.output.lower() or "invalid" in result.output.lower()
+
     def test_status_shows_info(self, runner, initialized_store):
         """Test 'status' command."""
         result = runner.invoke(cli, ["-s", initialized_store, "status"])
@@ -757,12 +793,18 @@ class TestExitCodes:
         result = runner.invoke(cli, ["-s", initialized_store, "status"])
         assert result.exit_code == 0
 
-    def test_no_store_shows_error_or_uses_default(self, runner):
-        """Test behavior when no store configured."""
-        # Clear environment
+    def test_no_store_shows_error_or_uses_default(self, runner, tmp_path, monkeypatch):
+        """Test behavior when no store configured.
+
+        Important: isolate cwd to a tmpdir so the CLI's fallback-to-cwd path
+        can't materialize a memoir store inside this repository's working
+        tree when the test runs from the repo root.
+        """
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("MEMOIR_STORE", raising=False)
         result = runner.invoke(cli, ["status"], env={"MEMOIR_STORE": ""})
-        # May fail (no store) or succeed (default config exists)
-        # Either way should not crash
+        # May fail (no store) or succeed (default config exists). Either way
+        # should not crash.
         assert result.exit_code in [0, 3]
 
     def test_error_returns_nonzero(self, runner, initialized_store):

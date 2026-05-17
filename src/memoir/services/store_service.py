@@ -12,8 +12,17 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from prollytree import StorageBackend
+
 from memoir.services.base import BaseService, ServiceError, StoreNotFoundError
 from memoir.services.models import CreateStoreResult, StoreInfo
+from memoir.store.backend import (
+    is_memoir_store,
+    parse_backend_name,
+    resolve_backend,
+    write_backend_lock,
+)
+from memoir.store.git_safety import harden_git_config
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +48,38 @@ class StoreService(BaseService):
             self.store_path = None
             self._store = None
 
-    def create_store(self, path: str) -> CreateStoreResult:
+    def create_store(
+        self,
+        path: str,
+        backend: str | StorageBackend | None = None,
+    ) -> CreateStoreResult:
         """
         Create a new memory store with git repository.
 
         Args:
-            path: Path where to create the store
+            path: Path where to create the store.
+            backend: Storage backend for prollytree nodes. Accepts a
+                ``StorageBackend`` enum, a name string (``git`` / ``file`` /
+                ``rocksdb`` / ``memory``), or ``None``. When ``None``, falls
+                back to the ``MEMOIR_PROLLY_BACKEND`` env var, then to
+                ``File`` (the default for new stores).
 
         Returns:
             CreateStoreResult with success status
         """
         try:
-            # Validate and normalize the path
+            # Validate and normalize the path first so resolve_backend()
+            # can honor any pre-existing per-store lock (e.g. on a retry
+            # after a partial create_store failure). Explicit ``backend``
+            # arg always wins; ``None`` falls through to the precedence
+            # chain (lock → on-disk detection → env var → File default).
             store_path = Path(path).expanduser().resolve()
+            if backend is None:
+                resolved_backend = resolve_backend(store_path)
+            elif isinstance(backend, str):
+                resolved_backend = parse_backend_name(backend)
+            else:
+                resolved_backend = backend
 
             # Check if path is writable by trying to create parent directories
             try:
@@ -132,6 +160,15 @@ class StoreService(BaseService):
                     )
             else:
                 _git_step(["init"], "git init")
+
+            # Apply gc-safety configs (disables auto gc + prevents dangling
+            # blob pruning) so prollytree's Git-backend nodes survive any
+            # automatic / default-config `git gc`. Idempotent.
+            harden_git_config(store_path)
+
+            # Persist the backend choice so future opens use the same one.
+            # A store's backend is fixed at create time.
+            write_backend_lock(store_path, resolved_backend)
 
             # Create data directory
             data_path = store_path / "data"
@@ -266,7 +303,14 @@ class StoreService(BaseService):
 
         path = Path(self.store_path)
         exists = path.exists()
-        initialized = exists and (path / ".git").exists()
+        # A memoir store has .git/ AND a memoir-specific marker (backend
+        # lock, .git/prolly/, or data/prolly_config_tree_config). A plain
+        # top-level data/ directory is *not* enough — many project repos
+        # have one, and accepting it would treat any random git repo
+        # (including memoir's own source checkout when status falls back
+        # to cwd) as "initialized" and lazy-materialize a fresh prolly
+        # tree inside it on the next ``_get_store()`` call.
+        initialized = exists and (path / ".git").exists() and is_memoir_store(path)
 
         if not exists:
             return StoreInfo(
