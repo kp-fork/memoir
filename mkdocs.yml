@@ -106,6 +106,7 @@ nav:
   - Claude Code: claude_code.md
   - Codex: codex.md
   - Hermes: hermes.md
+  - OpenClaw: openclaw.md
   - API:
       - Memoir: api/memoir.md
       - Classifier: api/classifier.md

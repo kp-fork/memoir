@@ -124,6 +124,21 @@ Hermes then auto-captures durable facts (people, schedule, preferences, standing
 </details>
 
 <details>
+<summary><b>OpenClaw</b></summary>
+
+Memoir is a memory plugin for [OpenClaw](https://github.com/openclaw/openclaw), the personal-assistant gateway. It lives in its own repo, [`zhangfengcdt/openclaw-memoir`](https://github.com/zhangfengcdt/openclaw-memoir). Install it into the memory slot, allow conversation access, and restart the gateway:
+
+```bash
+openclaw plugins install https://github.com/zhangfengcdt/openclaw-memoir   # or: --link /path/to/openclaw-memoir
+openclaw config set plugins.entries.memory-memoir.hooks.allowConversationAccess true
+systemctl --user restart openclaw-gateway
+```
+
+OpenClaw then auto-captures durable facts each turn (isolated per chat by default) and exposes `memoir_recall` / `memoir_remember` / `memoir_forget` / `memoir_status` tools plus an in-chat `/memoir` command. Set a capture model + provider key in config — `plugins.entries.memory-memoir.config.{model,apiKey}` (OpenClaw keeps its own keys in a secret store; use a `temperature=0`-capable model like `anthropic/claude-haiku-4-5`). See the [OpenClaw plugin guide](https://zhangfengcdt.github.io/memoir/openclaw/) for configuration, scoping, model selection, and tool-profile notes.
+
+</details>
+
+<details>
 <summary><b>OpenCode</b> (community)</summary>
 
 **[opencode-memoir](https://github.com/disafronov/opencode-memoir)** is a community-maintained plugin that brings Memoir's long-term memory workflows to [OpenCode](https://github.com/sst/opencode) through its native plugin system. Follow the install instructions in that repository.
