@@ -124,7 +124,7 @@ Hermes then auto-captures durable facts (people, schedule, preferences, standing
 </details>
 
 <details>
-<summary><b>OpenClaw</b></summary>
+<summary><b>OpenClaw</b> (community)</summary>
 
 Memoir is a memory plugin for [OpenClaw](https://github.com/openclaw/openclaw), the personal-assistant gateway. It lives in its own repo, [`zhangfengcdt/openclaw-memoir`](https://github.com/zhangfengcdt/openclaw-memoir). Install it into the memory slot, allow conversation access, and restart the gateway:
 
@@ -142,6 +142,27 @@ OpenClaw then auto-captures durable facts each turn (remembered across your sess
 <summary><b>OpenCode</b> (community)</summary>
 
 **[opencode-memoir](https://github.com/disafronov/opencode-memoir)** is a community-maintained plugin that brings Memoir's long-term memory workflows to [OpenCode](https://github.com/sst/opencode) through its native plugin system. Follow the install instructions in that repository.
+
+</details>
+
+<details>
+<summary><b>Any MCP host</b> (Claude Desktop, Cursor, Cline, Windsurf, VS Code, Zed, …)</summary>
+
+Memoir ships an MCP server (`memoir-mcp`) on the official Model Context Protocol SDK, so any MCP-compatible host gets git-versioned memory — including the `memoir_branches` / `memoir_checkout` / `memoir_commits` versioning tools no other memory server has. No install needed if you have `uv`; add to your host's `mcpServers` config:
+
+```json
+{
+  "mcpServers": {
+    "memoir": {
+      "command": "uvx",
+      "args": ["--from", "memoir-ai[mcp]", "memoir-mcp"],
+      "env": { "MEMOIR_STORE": "~/.memoir/mcp" }
+    }
+  }
+}
+```
+
+Recall is LLM-free (no key needed); the store auto-creates on first use. See the [MCP server guide](https://zhangfengcdt.github.io/memoir/mcp/) for per-host config (VS Code/Zed/Continue/LibreChat differ slightly), remote HTTP for ChatGPT/Claude.ai connectors, and the one-click Claude Desktop `.mcpb`.
 
 </details>
 
