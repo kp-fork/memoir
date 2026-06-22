@@ -15,6 +15,17 @@ export interface StoreCommit {
   message: string;
 }
 
+// A single timestamped facet entry inside a v2 memory blob. These ride inside
+// `Memory.value.entries` (schema_version 2); v1 blobs have none. `content` here
+// is this one entry's text — the projected roll-up of all active entries is the
+// top-level `Memory.content` (a.k.a. `Memory.value.content`).
+export interface FacetEntry {
+  content: string;
+  confidence?: number;
+  timestamp?: number; // unix seconds
+  status?: "active" | "superseded";
+}
+
 // Pydantic: Memory (extra='allow')
 export interface Memory {
   key: string;       // "namespace:path"

@@ -14,6 +14,16 @@ from datetime import datetime
 from pathlib import Path
 
 from memoir.services.base import BaseService, StoreNotFoundError
+from memoir.services.merge_policy import (
+    SCHEMA_VERSION,
+    ConflictStrategy,
+    apply_strategy,
+    facet_max_entries,
+    make_entry,
+    project_entries,
+    resolve_policy,
+    upgrade_blob,
+)
 from memoir.services.models import (
     DeleteResult,
     GetResult,
@@ -97,6 +107,89 @@ class MemoryService(BaseService):
             )
         return self._classifier
 
+    def _merge_prompt_template(self) -> str:
+        """Read the LLM_MERGE consolidation prompt template (single source)."""
+        import memoir.llm as _llm_pkg
+
+        tmpl = Path(_llm_pkg.__file__).parent / "prompts" / "merge_consolidate.tmpl"
+        return tmpl.read_text(encoding="utf-8")
+
+    async def _llm_consolidate(self, existing_content: str, new_content: str) -> str:
+        """Consolidate prior + new content into one statement (LLM_MERGE).
+
+        Reuses the classifier LLM (already temperature=0). Best-effort: on any
+        error it falls back to the new content (replace semantics) so a write
+        never fails because consolidation did.
+        """
+        try:
+            template = self._merge_prompt_template()
+            prompt = template.replace("<<EXISTING>>", existing_content).replace(
+                "<<NEW>>", new_content
+            )
+            resp = await self._get_llm().ainvoke(prompt)
+            merged = (getattr(resp, "content", None) or "").strip()
+            return merged or new_content
+        except Exception as e:
+            logger.warning("LLM_MERGE consolidation failed (%s); replacing instead", e)
+            return new_content
+
+    @staticmethod
+    def _recall_merge_enabled() -> bool:
+        """Whether merge-on-read LLM consolidation is on (MEMOIR_RECALL_MERGE)."""
+        return os.environ.get("MEMOIR_RECALL_MERGE", "").strip().lower() in {
+            "llm",
+            "1",
+            "true",
+            "on",
+        }
+
+    def _consolidate_read(self, contents: list[str]) -> str:
+        """Consolidate several facet contents into one string for retrieval.
+
+        Synchronous (uses the LLM's sync invoke). Best-effort: returns "" on any
+        error so the caller falls back to the deterministic projection.
+        """
+        try:
+            import memoir.llm as _llm_pkg
+
+            tmpl = (
+                Path(_llm_pkg.__file__).parent / "prompts" / "consolidate_read.tmpl"
+            ).read_text(encoding="utf-8")
+            numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(contents))
+            prompt = tmpl.replace("<<ENTRIES>>", numbered)
+            resp = self._get_llm().invoke(prompt)
+            return (getattr(resp, "content", None) or "").strip()
+        except Exception as e:
+            logger.warning("merge-on-read consolidation failed (%s)", e)
+            return ""
+
+    def _maybe_consolidate_value(self, value):
+        """Overwrite a v2 blob's projected content with an LLM consolidation of
+        its active entries. No-op for v1 / single-entry blobs, and a safe
+        deterministic fallback when already inside an event loop (the sync LLM
+        call can't run there)."""
+        if not isinstance(value, dict):
+            return value
+        entries = value.get("entries")
+        if not isinstance(entries, list):
+            return value
+        active = [e for e in entries if e.get("status", "active") == "active"]
+        if len(active) <= 1:
+            return value
+        try:
+            import asyncio
+
+            asyncio.get_running_loop()
+            return value  # inside a loop — keep deterministic projection
+        except RuntimeError:
+            pass  # no running loop; safe to call the sync LLM
+        merged = self._consolidate_read([e.get("content", "") for e in active])
+        if merged:
+            consolidated = dict(value)
+            consolidated["content"] = merged
+            return consolidated
+        return value
+
     def _get_search_engine(self):
         """Lazily initialize and return the search engine."""
         if self._search_engine is None:
@@ -116,6 +209,7 @@ class MemoryService(BaseService):
         path: str | None = None,
         paths: list[str] | None = None,
         replace: bool = False,
+        merge_policy: str | ConflictStrategy | None = None,
         extra_metadata: dict | None = None,
     ) -> RememberResult:
         """
@@ -139,11 +233,21 @@ class MemoryService(BaseService):
                 sibling paths from the same write. Pre-existing ``related_keys``
                 on a target path are merged in (a path-provided write does not
                 clobber siblings recorded by an earlier multi-key call).
-            replace: When True, overwrite the existing value at each path-provided
-                target instead of appending the new content as an "[update]"
-                paragraph. Use for callers that own their own read-merge-write
-                cycle (e.g. the plugin metrics writers, scalar onboard pointers).
-                Has no effect on the LLM-classifier branch, which always replaces.
+            replace: Back-compat alias for ``merge_policy="replace"``. When True
+                (and ``merge_policy`` is unset), overwrites the existing value at
+                each target instead of appending. Use for callers that own their
+                own read-merge-write cycle (e.g. the plugin metrics writers,
+                scalar onboard pointers).
+            merge_policy: Conflict-resolution strategy when the target key is
+                already occupied (one of ``ConflictStrategy``: append, replace,
+                confidence_gated, llm_merge, merge_on_read, reject). Precedence:
+                this arg > ``MEMOIR_MERGE_POLICY`` env > per-type default. When
+                unset, the default is derived from the key's memory type
+                (semantic → confidence_gated, episodic → append, procedural →
+                llm_merge, working → replace); ``MEMOIR_MERGE_POLICY=replace``
+                restores the old overwrite-everywhere behaviour. Writes are
+                stored as a timestamped-facet list (``schema_version`` 2) with a
+                projected top-level ``content`` so legacy readers are unaffected.
             extra_metadata: Optional caller-supplied metadata dict merged into
                 the stored value alongside ``content``/``key``/etc. Reserved
                 keys (``content``, ``key``, ``namespace``, ``confidence``,
@@ -264,47 +368,100 @@ class MemoryService(BaseService):
                     continue
                 memory_item[_k] = _v
 
-        # Store under all classified paths. Each blob carries `related_keys`
-        # listing the *other* sibling paths from this write (excludes self).
-        # On path-provided writes (caller supplied paths) we additionally:
-        #   - merge pre-existing related_keys so an earlier multi-key write
-        #     isn't clobbered by a single-path edit;
-        #   - append the new content as a new paragraph prefixed with
-        #     "[update] " when prior content exists, instead of replacing.
-        # The append behaviour is path-provided only — the LLM classifier
-        # branch keeps replace semantics so auto-capture (Stop hook) doesn't
-        # grow blobs unboundedly.
+        # Store under all classified paths as a timestamped-facet blob
+        # (schema_version 2). Each blob carries `related_keys` listing the
+        # *other* sibling paths from this write (excludes self), plus a projected
+        # top-level `content`/`confidence`/`timestamp` so legacy readers are
+        # unaffected. Conflict resolution against an already-occupied key is
+        # delegated to the merge-policy module:
+        #   - related_keys are unioned on path-provided writes so an earlier
+        #     multi-key write isn't clobbered by a single-path edit;
+        #   - the effective strategy decides whether to append a facet, replace,
+        #     gate on confidence, consolidate via LLM, etc. `merge_policy` (or
+        #     the `replace` alias) overrides; otherwise the per-type default is
+        #     used (semantic → confidence_gated, episodic → append, procedural →
+        #     llm_merge, working → replace).
         path_provided = bool(provided_paths)
+        new_source = memory_item.get("source")
+        explicit_policy: str | ConflictStrategy | None = merge_policy
+        if explicit_policy is None and replace:
+            explicit_policy = ConflictStrategy.REPLACE
+
+        max_entries = facet_max_entries()
+        conflicts: list[dict] = []
+        wrote_any = False
         for storage_key in keys:
             siblings = [k for k in keys if k != storage_key]
             related_keys = list(siblings)
-            stored_content = content
-            if path_provided:
-                try:
-                    existing = store.get(namespace_tuple, storage_key)
-                except Exception:
-                    existing = None
-                if isinstance(existing, dict):
-                    prior = existing.get("related_keys")
-                    if isinstance(prior, list):
-                        # Union, preserving the new siblings' order first.
-                        seen_rel: set[str] = set(related_keys)
-                        for k in prior:
-                            if isinstance(k, str) and k not in seen_rel:
-                                seen_rel.add(k)
-                                related_keys.append(k)
-                    if not replace:
-                        prior_content = existing.get("content")
-                        if isinstance(prior_content, str) and prior_content.strip():
-                            stored_content = f"{prior_content}\n\n[update] {content}"
-            memory_item_copy = memory_item.copy()
-            memory_item_copy["key"] = storage_key
-            memory_item_copy["content"] = stored_content
-            memory_item_copy["related_keys"] = related_keys
-            store.put(namespace_tuple, storage_key, memory_item_copy)
+            try:
+                existing = store.get(namespace_tuple, storage_key)
+            except Exception:
+                existing = None
 
-        # Get commit information
-        commit_hash, commit_date = self._get_current_commit_info()
+            if path_provided and isinstance(existing, dict):
+                prior = existing.get("related_keys")
+                if isinstance(prior, list):
+                    # Union, preserving the new siblings' order first.
+                    seen_rel: set[str] = set(related_keys)
+                    for k in prior:
+                        if isinstance(k, str) and k not in seen_rel:
+                            seen_rel.add(k)
+                            related_keys.append(k)
+
+            existing_v2 = upgrade_blob(existing) if isinstance(existing, dict) else None
+            strategy = resolve_policy(
+                explicit_policy,
+                storage_key,
+                path_provided=path_provided,
+            )
+
+            entry_content = content
+            # LLM_MERGE consolidates prior + new into one statement before the
+            # (pure) strategy collapses it to a single entry. Best-effort: the
+            # helper falls back to replace semantics on any LLM error.
+            if strategy == ConflictStrategy.LLM_MERGE and existing_v2 is not None:
+                existing_text = project_entries(existing_v2["entries"])["content"]
+                if existing_text.strip():
+                    entry_content = await self._llm_consolidate(existing_text, content)
+
+            new_entry = make_entry(
+                content=entry_content,
+                confidence=confidence,
+                timestamp=memory_item["timestamp"],
+                source=new_source,
+            )
+            outcome = apply_strategy(
+                strategy,
+                existing_v2,
+                new_entry,
+                key=storage_key,
+                namespace=namespace,
+                max_entries=max_entries,
+            )
+            if outcome.action == "reject":
+                if outcome.conflict is not None:
+                    conflicts.append(outcome.conflict.to_dict())
+                continue
+            if outcome.action == "noop":
+                continue
+
+            proj = project_entries(outcome.entries)
+            blob = memory_item.copy()
+            blob["key"] = storage_key
+            blob["related_keys"] = related_keys
+            blob["entries"] = outcome.entries
+            blob["schema_version"] = SCHEMA_VERSION
+            blob["content"] = proj["content"]
+            blob["confidence"] = proj["confidence"]
+            blob["timestamp"] = proj["timestamp"]
+            store.put(namespace_tuple, storage_key, blob)
+            wrote_any = True
+
+        # Get commit information (only if something was actually written)
+        if wrote_any:
+            commit_hash, commit_date = self._get_current_commit_info()
+        else:
+            commit_hash, commit_date = None, None
         step_timings["step3_memory_storage"] = round(time.time() - step3_start, 3)
 
         # Step 4: Timeline Processing
@@ -343,7 +500,7 @@ class MemoryService(BaseService):
         step_timings["total_remember"] = round(time.time() - remember_start, 3)
 
         return RememberResult(
-            success=True,
+            success=not conflicts,
             key=key,
             keys=keys,
             confidence=confidence,
@@ -357,6 +514,7 @@ class MemoryService(BaseService):
             location_applied=location_applied,
             namespace=namespace,
             content=content,
+            conflicts=conflicts or None,
         )
 
     def remember_sync(
@@ -453,6 +611,7 @@ class MemoryService(BaseService):
         self,
         keys: list[str],
         namespace: str = "default",
+        consolidate: bool | None = None,
     ) -> GetResult:
         """
         Directly fetch one or more memories by key.
@@ -464,6 +623,12 @@ class MemoryService(BaseService):
         Args:
             keys: List of taxonomy paths to fetch (e.g. ["preferences.coding.style"]).
             namespace: Namespace to look in. Defaults to "default".
+            consolidate: Merge-on-read. When True (or None and
+                MEMOIR_RECALL_MERGE is set), a multi-entry facet blob's returned
+                ``content`` is replaced with an LLM consolidation of its active
+                entries. Off by default — the deterministic projection is
+                already a coherent read. Falls back to the projection inside an
+                event loop or on LLM error.
 
         Returns:
             GetResult with one entry per requested key. Missing keys are marked
@@ -473,6 +638,9 @@ class MemoryService(BaseService):
             raise StoreNotFoundError(self.store_path)
 
         start = time.time()
+        do_consolidate = (
+            self._recall_merge_enabled() if consolidate is None else consolidate
+        )
 
         try:
             store = self._get_store()
@@ -481,6 +649,8 @@ class MemoryService(BaseService):
             items = []
             for key in keys:
                 value = store.get(namespace_tuple, key)
+                if do_consolidate and value is not None:
+                    value = self._maybe_consolidate_value(value)
                 items.append(
                     {
                         "key": key,
